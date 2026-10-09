@@ -55,7 +55,11 @@ class GeminiProvider(
                 contents = listOf(ContentDto(parts = parts))
             )
 
-            val response = apiService.generateContent(apiKey = apiKey, request = request)
+            val response = apiService.generateContent(
+                endpoint = "v1beta/models/gemini-2.5-flash:generateContent",
+                apiKey = apiKey,
+                request = request
+            )
             val candidate = response.candidates?.firstOrNull()
             val text = candidate?.content?.parts?.firstOrNull()?.text
 
