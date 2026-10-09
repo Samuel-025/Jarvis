@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,6 +74,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,6 +88,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.agent.StepStatus
 import com.example.core.model.CommandResult
@@ -216,7 +223,20 @@ fun TopSafetyHeader(
 
 @Composable
 fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
+    val context = LocalContext.current
     var textInput by remember { mutableStateOf("") }
+    var showMicPermissionRationale by remember { mutableStateOf(false) }
+    var showMicPermissionDenied by remember { mutableStateOf(false) }
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            showMicPermissionDenied = false
+            viewModel.startVoiceListening()
+        } else {
+            showMicPermissionDenied = true
+        }
+    }
     val listening = uiState.voiceState == VoiceState.LISTENING
     val stateColor = when (uiState.voiceState) { VoiceState.LISTENING -> JarvisCyan; VoiceState.SPEAKING -> JarvisGold; VoiceState.ERROR -> JarvisRedAlert; VoiceState.PROCESSING -> JarvisAccentBlue; VoiceState.IDLE -> JarvisCyan }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -247,9 +267,56 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(value = textInput, onValueChange = { textInput = it }, placeholder = { Text("Tap the microphone and speak, or type a command.", color = JarvisTextSecondary, fontSize = 13.sp) }, modifier = Modifier.weight(1f).testTag("command_input_field"), shape = RoundedCornerShape(14.dp), maxLines = 3)
-            IconButton(onClick = { if (listening) viewModel.stopVoiceListening() else viewModel.startVoiceListening() }, modifier = Modifier.size(54.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("voice_mic_fab")) { Icon(if (listening) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = "Microphone", tint = if (listening) JarvisRedAlert else JarvisCyan, modifier = Modifier.size(29.dp)) }
+            IconButton(
+                onClick = {
+                    if (listening) {
+                        viewModel.stopVoiceListening()
+                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        viewModel.startVoiceListening()
+                    } else {
+                        showMicPermissionRationale = true
+                    }
+                },
+                modifier = Modifier.size(54.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("voice_mic_fab")
+            ) { Icon(if (listening) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = "Microphone", tint = if (listening) JarvisRedAlert else JarvisCyan, modifier = Modifier.size(29.dp)) }
             IconButton(onClick = { if (textInput.isNotBlank()) { viewModel.executeTextCommand(textInput); textInput = "" } }, modifier = Modifier.size(44.dp).testTag("send_command_button")) { Icon(Icons.Default.Send, contentDescription = "Send command", tint = JarvisCyan, modifier = Modifier.size(29.dp)) }
         }
+    }
+
+    if (showMicPermissionRationale) {
+        AlertDialog(
+            onDismissRequest = { showMicPermissionRationale = false },
+            title = { Text("Allow microphone access?", color = JarvisCyan) },
+            text = { Text("Jarvis needs microphone access only when you choose voice input. You can keep using text commands without it.", color = JarvisTextPrimary) },
+            confirmButton = {
+                Button(onClick = {
+                    showMicPermissionRationale = false
+                    microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)) {
+                    Text("Continue", color = JarvisNavyDark)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showMicPermissionRationale = false }) { Text("Not now", color = JarvisTextSecondary) } },
+            containerColor = JarvisSurfaceDark
+        )
+    }
+
+    if (showMicPermissionDenied) {
+        AlertDialog(
+            onDismissRequest = { showMicPermissionDenied = false },
+            title = { Text("Voice input unavailable", color = JarvisGold) },
+            text = { Text("Microphone access was not granted. Text commands still work. You can review microphone access in Android Settings.", color = JarvisTextPrimary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showMicPermissionDenied = false
+                    runCatching {
+                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                    }
+                }) { Text("Open Settings", color = JarvisCyan) }
+            },
+            dismissButton = { TextButton(onClick = { showMicPermissionDenied = false }) { Text("Close", color = JarvisTextSecondary) } },
+            containerColor = JarvisSurfaceDark
+        )
     }
 }
 
@@ -304,23 +371,65 @@ private fun GeneralSettingsContent(viewModel: MainViewModel, uiState: MainUiStat
 @Composable
 fun PermissionsOverviewTab() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var refreshToken by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshToken++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val microphoneLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refreshToken++ }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refreshToken++ }
     val permissions = listOf(
-        Triple("Network state", "Detect online/offline status for the offline chip.", "network"), Triple("Internet", "Reach cloud AI providers when privacy mode allows.", "internet"), Triple("Vibrate", "Haptic feedback on emergency stop.", Manifest.permission.VIBRATE), Triple("Microphone", "Voice input and conversation mode.", Manifest.permission.RECORD_AUDIO), Triple("Notifications", "Reminder delivery and status notifications.", Manifest.permission.POST_NOTIFICATIONS), Triple("Camera", "Vision mode for objects, documents and text.", Manifest.permission.CAMERA), Triple("Contacts", "Resolve contact-based commands.", Manifest.permission.READ_CONTACTS), Triple("Phone", "Call placement after explicit confirmation.", Manifest.permission.CALL_PHONE), Triple("SMS", "Send SMS after explicit confirmation.", Manifest.permission.SEND_SMS), Triple("Display over other apps", "Floating Jarvis overlay.", "overlay"), Triple("Accessibility service", "Read screen content and perform supported UI actions.", "accessibility"), Triple("Notification access", "Read and triage notifications.", "notification_access")
+        Triple("Internet", "Normal install-time permission used by cloud AI providers when enabled.", "internet"),
+        Triple("Network state", "Normal install-time permission used to detect connectivity.", "network"),
+        Triple("Vibration", "Normal permission for haptic feedback.", Manifest.permission.VIBRATE),
+        Triple("Microphone", "Optional. Requested only when you choose voice input. Text commands work without it.", Manifest.permission.RECORD_AUDIO),
+        Triple("Camera / flashlight", "Optional CAMERA permission is used by the flashlight tool. This build does not capture camera images; Vision currently analyzes a generated test frame.", Manifest.permission.CAMERA)
     )
+
     Column(Modifier.fillMaxSize()) {
         Text("Permissions", color = JarvisTextPrimary, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 18.dp, top = 14.dp, bottom = 4.dp))
-        Text("Review what Jarvis can access. Tap a card to open the relevant Android settings.", color = JarvisTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
-        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            items(permissions) { (title, description, permission) ->
-                val status = when (permission) { "network", "internet" -> "Manifest"; "overlay" -> if (Settings.canDrawOverlays(context)) "Granted" else "Not granted"; "accessibility" -> "Special access"; "notification_access" -> "Special access"; else -> if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) "Granted" else "Not granted" }
-                Card(Modifier.fillMaxWidth().clickable {
-                    val intent = when (permission) { "overlay" -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")); "accessibility" -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS); "notification_access" -> Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS); else -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")) }
-                    runCatching { context.startActivity(intent) }
-                }, colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(15.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, color = JarvisTextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text(description, color = JarvisTextSecondary, fontSize = 11.sp, lineHeight = 15.sp) }; Icon(Icons.Default.ChevronRight, contentDescription = "Open $title settings", tint = JarvisTextSecondary) }
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) { StatusPill(if (permission == Manifest.permission.RECORD_AUDIO) "Phase 3" else "Optional", JarvisCyan); StatusPill(status, if (status == "Granted" || status == "Manifest") JarvisGreenOk else JarvisGold) }
+        Text("Only permissions used by this build are listed. Runtime access is requested when you choose the related feature.", color = JarvisTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+        key(refreshToken) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                items(permissions) { (title, description, permission) ->
+                    val status = when (permission) {
+                        "network", "internet" -> "Declared · install-time"
+                        Manifest.permission.VIBRATE -> if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) "Available" else "Unavailable"
+                        else -> if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) "Granted" else "Not granted"
                     }
+                    val canRequest = permission == Manifest.permission.RECORD_AUDIO || permission == Manifest.permission.CAMERA
+                    val actionModifier = if (canRequest && status == "Not granted") Modifier.clickable {
+                        when (permission) {
+                            Manifest.permission.RECORD_AUDIO -> microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            Manifest.permission.CAMERA -> cameraLauncher.launch(Manifest.permission.CAMERA)
+                            else -> Unit
+                        }
+                    } else Modifier
+                    Card(Modifier.fillMaxWidth().then(actionModifier), colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(15.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(title, color = JarvisTextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(description, color = JarvisTextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+                                }
+                                if (canRequest && status == "Not granted") Icon(Icons.Default.ChevronRight, contentDescription = "Request $title permission", tint = JarvisTextSecondary)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                StatusPill(if (canRequest) "Optional" else "Normal", JarvisCyan)
+                                StatusPill(status, if (status == "Granted" || status.startsWith("Declared") || status == "Available") JarvisGreenOk else JarvisGold)
+                                if (canRequest && status == "Not granted") Text("Tap to request", color = JarvisCyan, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+                item {
+                    Text("This build does not currently declare an Accessibility service, notification listener, or floating overlay. Those special-access settings are therefore not requested or shown as enabled.", color = JarvisTextSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp))
                 }
             }
         }
