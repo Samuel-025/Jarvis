@@ -1,7 +1,10 @@
 package com.example.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.speech.SpeechRecognizer
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -40,7 +43,10 @@ data class MainUiState(
     val lastCommandResult: CommandResult? = null,
     val currentAgentPlan: AgentPlan? = null,
     val visionAnalysisResult: VisionResult? = null,
-    val isProcessing: Boolean = false
+    val isProcessing: Boolean = false,
+    val pendingRuntimePermission: String? = null,
+    val pendingPermissionIntent: JarvisIntent? = null,
+    val pendingPermissionSource: String? = null
 )
 
 class MainViewModel(
@@ -129,6 +135,21 @@ class MainViewModel(
     }
 
     fun executeIntent(intent: JarvisIntent, source: String, isConfirmed: Boolean = false) {
+        // Flashlight control needs CAMERA access. Request it from the visible UI only when
+        // the user actually invokes the torch, including through voice commands.
+        if (!EmergencyStop.isActive() && intent is JarvisIntent.Flashlight &&
+            ContextCompat.checkSelfPermission(serviceLocator.appContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+        ) {
+            _uiState.value = _uiState.value.copy(
+                pendingRuntimePermission = Manifest.permission.CAMERA,
+                pendingPermissionIntent = intent,
+                pendingPermissionSource = source,
+                isProcessing = false,
+                voiceState = VoiceState.IDLE,
+                lastCommandResult = null
+            )
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
             val result = serviceLocator.intentRouter.route(
@@ -163,6 +184,27 @@ class MainViewModel(
             } else if (source == "USER_VOICE" && _uiState.value.voiceState == VoiceState.PROCESSING) {
                 _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
             }
+        }
+    }
+
+    fun onRuntimePermissionResult(granted: Boolean) {
+        val state = _uiState.value
+        val pendingIntent = state.pendingPermissionIntent
+        val source = state.pendingPermissionSource ?: "USER"
+        _uiState.value = state.copy(
+            pendingRuntimePermission = null,
+            pendingPermissionIntent = null,
+            pendingPermissionSource = null
+        )
+        if (pendingIntent == null) return
+        if (granted) {
+            executeIntent(pendingIntent, source = source)
+        } else {
+            _uiState.value = _uiState.value.copy(
+                lastCommandResult = CommandResult.Error("Flashlight access was not granted. Jarvis can still use text, voice, AI, and other commands."),
+                voiceState = VoiceState.IDLE,
+                isProcessing = false
+            )
         }
     }
 

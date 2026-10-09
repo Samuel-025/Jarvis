@@ -237,6 +237,9 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
             showMicPermissionDenied = true
         }
     }
+    val flashlightPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> viewModel.onRuntimePermissionResult(granted) }
     val listening = uiState.voiceState == VoiceState.LISTENING
     val stateColor = when {
         uiState.voiceState == VoiceState.LISTENING -> JarvisCyan
@@ -294,6 +297,21 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
             ) { Icon(if (listening) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = "Microphone", tint = if (listening) JarvisRedAlert else JarvisCyan, modifier = Modifier.size(29.dp)) }
             IconButton(onClick = { if (textInput.isNotBlank()) { viewModel.executeTextCommand(textInput); textInput = "" } }, modifier = Modifier.size(44.dp).testTag("send_command_button")) { Icon(Icons.Default.Send, contentDescription = "Send command", tint = JarvisCyan, modifier = Modifier.size(29.dp)) }
         }
+    }
+
+    if (uiState.pendingRuntimePermission == Manifest.permission.CAMERA) {
+        AlertDialog(
+            onDismissRequest = { viewModel.onRuntimePermissionResult(false) },
+            title = { Text("Allow flashlight access?", color = JarvisCyan) },
+            text = { Text("Jarvis needs Android camera permission to control the phone's flashlight. It does not capture or upload images for this torch command. You can cancel and keep using other features.", color = JarvisTextPrimary) },
+            confirmButton = {
+                Button(onClick = { flashlightPermissionLauncher.launch(Manifest.permission.CAMERA) }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)) {
+                    Text("Continue", color = JarvisNavyDark)
+                }
+            },
+            dismissButton = { TextButton(onClick = { viewModel.onRuntimePermissionResult(false) }) { Text("Not now", color = JarvisTextSecondary) } },
+            containerColor = JarvisSurfaceDark
+        )
     }
 
     if (showMicPermissionRationale) {
@@ -402,7 +420,7 @@ fun PermissionsOverviewTab() {
         Triple("Network state", "Normal install-time permission used to detect connectivity.", "network"),
         Triple("Vibration", "Normal permission for haptic feedback.", Manifest.permission.VIBRATE),
         Triple("Microphone", "Optional. Requested only when you choose voice input. Text commands work without it.", Manifest.permission.RECORD_AUDIO),
-        Triple("Camera / flashlight", "Optional CAMERA permission is used by the flashlight tool. Vision opens Android's camera preview and sends a photo for analysis only in Cloud mode.", Manifest.permission.CAMERA)
+        Triple("Flashlight control", "Optional CAMERA permission is needed only when Jarvis controls the phone torch. Vision uses Android's camera preview flow separately and asks before cloud image analysis.", Manifest.permission.CAMERA)
     )
 
     Column(Modifier.fillMaxSize()) {
