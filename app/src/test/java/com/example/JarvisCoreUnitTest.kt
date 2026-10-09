@@ -119,4 +119,32 @@ class JarvisCoreUnitTest {
         assertTrue(intent is JarvisIntent.VolumeControl)
         assertEquals(VolumeAction.UNMUTE, (intent as JarvisIntent.VolumeControl).action)
     }
+
+    @Test
+    fun testPhoneActionsAreDraftedOrDelegatedSafely() {
+        val call = IntentClassifier.classify("call 9876543210")
+        assertTrue(call is JarvisIntent.PhoneAction)
+        assertEquals("dial_phone", (call as JarvisIntent.PhoneAction).actionType)
+        assertEquals("9876543210", call.params["number"])
+
+        val sms = IntentClassifier.classify("text 9876543210 saying Hello from Jarvis")
+        assertTrue(sms is JarvisIntent.PhoneAction)
+        assertEquals("send_sms_draft", (sms as JarvisIntent.PhoneAction).actionType)
+        assertEquals("Hello from Jarvis", sms.params["message"])
+
+        val timer = IntentClassifier.classify("set timer for 5 minutes")
+        assertTrue(timer is JarvisIntent.PhoneAction)
+        assertEquals("300", (timer as JarvisIntent.PhoneAction).params["seconds"])
+    }
+
+    @Test
+    fun testWebAndYoutubeSearchesBecomeRealUrls() {
+        val web = IntentClassifier.classify("search web for Kotlin coroutines")
+        assertTrue(web is JarvisIntent.PhoneAction)
+        assertTrue((web as JarvisIntent.PhoneAction).params["url"].orEmpty().startsWith("https://www.google.com/search?q="))
+
+        val youtube = IntentClassifier.classify("play lofi music on YouTube")
+        assertTrue(youtube is JarvisIntent.PhoneAction)
+        assertTrue((youtube as JarvisIntent.PhoneAction).params["url"].orEmpty().startsWith("https://www.youtube.com/results?search_query="))
+    }
 }

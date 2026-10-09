@@ -2,6 +2,8 @@ package com.example.core.nlp
 
 import com.example.core.model.JarvisIntent
 import com.example.core.model.VolumeAction
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 object IntentClassifier {
     fun classify(rawInput: String): JarvisIntent {
@@ -52,6 +54,66 @@ object IntentClassifier {
             normalized.contains("what day") || normalized.contains("today's date") || normalized.contains("what is the date") ||
             normalized in setOf("time kya hua hai", "kitne baje hain", "kitne baje hai", "samay kya hai", "abhi time kya hai", "aaj ki date kya hai", "aaj ka date kya hai", "aaj kaun sa din hai", "अभी कितने बजे हैं", "समय क्या है", "आज की तारीख क्या है", "आज कौन सा दिन है")
         ) return JarvisIntent.DateTimeQuery
+
+        // Phone actions use Android intents only: calls open the dialer and messages open a draft.
+        // Jarvis never silently places a call or sends an SMS.
+        val dialMatch = Regex("(?i)^(?:call|dial)\\s+([+()0-9 .-]{3,})$").find(rawInput.trim())
+        if (dialMatch != null) {
+            val number = dialMatch.groupValues[1].filter { it.isDigit() || it == '+' }
+            if (number.count { it.isDigit() } >= 3) {
+                return JarvisIntent.PhoneAction("dial_phone", mapOf("number" to number))
+            }
+        }
+        val smsMatch = Regex("(?i)^(?:text|sms|message|send sms to|send message to)\\s+([+()0-9 .-]{3,})\\s+(?:saying|message|that)\\s+(.+)$").find(rawInput.trim())
+        if (smsMatch != null) {
+            val number = smsMatch.groupValues[1].filter { it.isDigit() || it == '+' }
+            val message = smsMatch.groupValues[2].trim()
+            if (number.count { it.isDigit() } >= 3 && message.isNotBlank()) {
+                return JarvisIntent.PhoneAction("send_sms_draft", mapOf("number" to number, "message" to message))
+            }
+        }
+
+        // Timers are handed to the user's Clock app; reminders/scheduled background routines
+        // are not claimed as implemented until a notification-backed scheduler exists.
+        val timerMatch = Regex("(?i)^(?:set )?timer for (\\d+)\\s+(seconds?|minutes?|hours?)(?:\\s+(?:called|named|for)\\s+(.+))?$").find(rawInput.trim())
+        if (timerMatch != null) {
+            val amount = timerMatch.groupValues[1].toLongOrNull()
+            val unit = timerMatch.groupValues[2].lowercase()
+            val multiplier = when {
+                unit.startsWith("hour") -> 3600L
+                unit.startsWith("minute") -> 60L
+                else -> 1L
+            }
+            val seconds = amount?.times(multiplier)?.coerceIn(1L, 86400L)
+            if (seconds != null) {
+                val label = timerMatch.groupValues[3].ifBlank { "JARVIS Timer" }
+                return JarvisIntent.PhoneAction("set_timer", mapOf("seconds" to seconds.toString(), "message" to label))
+            }
+        }
+
+        // Web and YouTube searches open a real URL in the user's browser/app; no search is fabricated.
+        val normalizedYoutubeQuery = when {
+            normalized.startsWith("search youtube for ") -> normalized.removePrefix("search youtube for ")
+            normalized.startsWith("youtube search for ") -> normalized.removePrefix("youtube search for ")
+            normalized.startsWith("open youtube for ") -> normalized.removePrefix("open youtube for ")
+            normalized.startsWith("play ") && normalized.endsWith(" on youtube") -> normalized.removePrefix("play ").removeSuffix(" on youtube")
+            normalized.startsWith("search youtube ") -> normalized.removePrefix("search youtube ")
+            else -> ""
+        }.trim()
+        if (normalizedYoutubeQuery.isNotBlank()) {
+            val query = URLEncoder.encode(normalizedYoutubeQuery, StandardCharsets.UTF_8.name())
+            return JarvisIntent.PhoneAction("open_web_url", mapOf("url" to "https://www.youtube.com/results?search_query=$query"))
+        }
+        val normalizedWebQuery = when {
+            normalized.startsWith("search web for ") -> normalized.removePrefix("search web for ")
+            normalized.startsWith("search for ") -> normalized.removePrefix("search for ")
+            normalized.startsWith("google ") -> normalized.removePrefix("google ")
+            else -> ""
+        }.trim()
+        if (normalizedWebQuery.isNotBlank()) {
+            val query = URLEncoder.encode(normalizedWebQuery, StandardCharsets.UTF_8.name())
+            return JarvisIntent.PhoneAction("open_web_url", mapOf("url" to "https://www.google.com/search?q=$query"))
+        }
 
         // App launch aliases. Keep the target narrow so arbitrary speech isn't mistaken for a launch.
         val launchAliases = mapOf(
