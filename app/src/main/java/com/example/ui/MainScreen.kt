@@ -1,6 +1,19 @@
 package com.example.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,6 +56,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -90,139 +104,22 @@ import com.example.ui.theme.JarvisAccentBlue
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Console, 1: OS (Tasks/Notes), 2: Agent & Vision, 3: Audit & Integrations
-
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = JarvisNavyDark,
-        bottomBar = {
-            NavigationBar(
-                containerColor = JarvisSurfaceDark,
-                contentColor = JarvisCyan
-            ) {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Dashboard, contentDescription = "Console") },
-                    label = { Text("Console") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = JarvisCyan,
-                        selectedTextColor = JarvisCyan,
-                        indicatorColor = JarvisCardDark
-                    )
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.Note, contentDescription = "Personal OS") },
-                    label = { Text("Personal OS") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = JarvisCyan,
-                        selectedTextColor = JarvisCyan,
-                        indicatorColor = JarvisCardDark
-                    )
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.Assistant, contentDescription = "Agent") },
-                    label = { Text("Agent") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = JarvisCyan,
-                        selectedTextColor = JarvisCyan,
-                        indicatorColor = JarvisCardDark
-                    )
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = { Icon(Icons.Default.History, contentDescription = "Audit & Status") },
-                    label = { Text("Audit") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = JarvisCyan,
-                        selectedTextColor = JarvisCyan,
-                        indicatorColor = JarvisCardDark
-                    )
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 4,
-                    onClick = { selectedTab = 4 },
-                    icon = { Icon(Icons.Default.Extension, contentDescription = "AI Settings") },
-                    label = { Text("AI Config") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = JarvisCyan,
-                        selectedTextColor = JarvisCyan,
-                        indicatorColor = JarvisCardDark
-                    )
-                )
-            }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var settingsDestination by remember { mutableStateOf("General") }
+    Scaffold(modifier = Modifier.fillMaxSize(), containerColor = JarvisNavyDark, bottomBar = {
+        NavigationBar(containerColor = JarvisSurfaceDark, contentColor = JarvisCyan) {
+            val tabs = listOf(Triple("Assistant", Icons.Default.Assistant, 0), Triple("Settings", Icons.Default.Settings, 1), Triple("Permissions", Icons.Default.Lock, 2), Triple("Debug", Icons.Default.BugReport, 3))
+            tabs.forEach { (label, image, index) -> NavigationBarItem(selected = selectedTab == index, onClick = { selectedTab = index }, icon = { Icon(image, contentDescription = label) }, label = { Text(label, maxLines = 1) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = JarvisCyan, selectedTextColor = JarvisTextPrimary, indicatorColor = JarvisCardDark, unselectedIconColor = JarvisTextSecondary, unselectedTextColor = JarvisTextSecondary)) }
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // Top Status & Safety Bar
-            TopSafetyHeader(
-                uiState = uiState,
-                onEmergencyStop = { viewModel.triggerEmergencyStop() },
-                onResetEmergencyStop = { viewModel.resetEmergencyStop() },
-                onPrivacySelected = { viewModel.setPrivacyMode(it) }
-            )
-
-            // Confirmation Dialog if an action requires explicit user confirmation
-            uiState.pendingConfirmation?.let { req ->
-                AlertDialog(
-                    onDismissRequest = { viewModel.rejectPendingAction() },
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = JarvisGold)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Confirmation Required", color = JarvisGold)
-                        }
-                    },
-                    text = {
-                        Text(
-                            text = req.prompt,
-                            color = JarvisTextPrimary
-                        )
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = { viewModel.confirmPendingAction() },
-                            colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan),
-                            modifier = Modifier.testTag("confirm_action_button")
-                        ) {
-                            Text("Approve", color = JarvisNavyDark, fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    dismissButton = {
-                        OutlinedButton(
-                            onClick = { viewModel.rejectPendingAction() },
-                            modifier = Modifier.testTag("reject_action_button")
-                        ) {
-                            Text("Reject", color = JarvisRedAlert)
-                        }
-                    },
-                    containerColor = JarvisSurfaceDark
-                )
+    }) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when (selectedTab) {
+                0 -> ConsoleTab(viewModel, uiState)
+                1 -> SettingsHubTab(viewModel, uiState, settingsDestination) { settingsDestination = it }
+                2 -> PermissionsOverviewTab()
+                else -> AuditIntegrationsTab(viewModel)
             }
-
-            // Tab Content
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                when (selectedTab) {
-                    0 -> ConsoleTab(viewModel, uiState)
-                    1 -> PersonalOsTab(viewModel)
-                    2 -> AgentVisionTab(viewModel, uiState)
-                    3 -> AuditIntegrationsTab(viewModel)
-                    4 -> AISettingsTab(viewModel)
-                }
-            }
+            uiState.pendingConfirmation?.let { req -> AlertDialog(onDismissRequest = { viewModel.rejectPendingAction() }, title = { Text("Confirmation Required", color = JarvisGold) }, text = { Text(req.prompt, color = JarvisTextPrimary) }, confirmButton = { Button(onClick = { viewModel.confirmPendingAction() }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan), modifier = Modifier.testTag("confirm_action_button")) { Text("Approve", color = JarvisNavyDark, fontWeight = FontWeight.Bold) } }, dismissButton = { OutlinedButton(onClick = { viewModel.rejectPendingAction() }, modifier = Modifier.testTag("reject_action_button")) { Text("Reject", color = JarvisRedAlert) } }, containerColor = JarvisSurfaceDark) }
         }
     }
 }
@@ -320,233 +217,111 @@ fun TopSafetyHeader(
 @Composable
 fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
     var textInput by remember { mutableStateOf("") }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp)
-    ) {
-        // Voice State / Status indicator
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
-            colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Voice State: ${uiState.voiceState.name}",
-                        fontWeight = FontWeight.SemiBold,
-                        color = when (uiState.voiceState) {
-                            VoiceState.LISTENING -> JarvisCyan
-                            VoiceState.SPEAKING -> JarvisGold
-                            VoiceState.ERROR -> JarvisRedAlert
-                            VoiceState.PROCESSING -> JarvisAccentBlue
-                            VoiceState.IDLE -> JarvisTextSecondary
-                        },
-                        fontSize = 13.sp
-                    )
-                    if (uiState.lastRecognizedSpeech.isNotBlank()) {
-                        Text(
-                            text = "\"${uiState.lastRecognizedSpeech}\"",
-                            color = JarvisTextPrimary,
-                            fontSize = 12.sp,
-                            maxLines = 1
-                        )
-                    }
-                    if (uiState.voiceErrorMessage != null) {
-                        Text(
-                            text = uiState.voiceErrorMessage ?: "",
-                            color = JarvisRedAlert,
-                            fontSize = 11.sp
-                        )
+    val listening = uiState.voiceState == VoiceState.LISTENING
+    val stateColor = when (uiState.voiceState) { VoiceState.LISTENING -> JarvisCyan; VoiceState.SPEAKING -> JarvisGold; VoiceState.ERROR -> JarvisRedAlert; VoiceState.PROCESSING -> JarvisAccentBlue; VoiceState.IDLE -> JarvisCyan }
+    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            StatusPill(uiState.privacyMode.name.lowercase().replaceFirstChar { it.uppercase() }, JarvisCyan)
+            StatusPill(if (uiState.voiceState == VoiceState.ERROR) "Voice issue" else "Ready", JarvisGreenOk)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { if (uiState.isEmergencyStopped) viewModel.resetEmergencyStop() else viewModel.triggerEmergencyStop() }, modifier = Modifier.size(48.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("emergency_stop_button")) { Icon(if (uiState.isEmergencyStopped) Icons.Default.Refresh else Icons.Default.Stop, contentDescription = "Emergency stop", tint = if (uiState.isEmergencyStopped) JarvisGreenOk else JarvisRedAlert) }
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                Box(Modifier.size(244.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().border(2.dp, JarvisCyan.copy(alpha = .20f), CircleShape).padding(18.dp).border(3.dp, JarvisCyan.copy(alpha = .35f), CircleShape).padding(20.dp).border(4.dp, stateColor, CircleShape), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(if (listening) 104.dp else 82.dp).clip(CircleShape).background(stateColor.copy(alpha = .18f)), contentAlignment = Alignment.Center) { Box(Modifier.size(26.dp).clip(CircleShape).background(stateColor)) }
                     }
                 }
+                Text(uiState.voiceState.name, color = stateColor, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                when {
+                    uiState.isProcessing -> Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(18.dp), color = JarvisCyan, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Processing request…", color = JarvisTextSecondary, fontSize = 13.sp) }
+                    uiState.lastCommandResult is CommandResult.Success -> Text((uiState.lastCommandResult as CommandResult.Success).message, color = JarvisCyanLight, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 4)
+                    uiState.lastCommandResult is CommandResult.Error -> Text((uiState.lastCommandResult as CommandResult.Error).message, color = JarvisRedAlert, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 4)
+                    uiState.lastRecognizedSpeech.isNotBlank() -> Text("“${uiState.lastRecognizedSpeech}”", color = JarvisTextPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
+                    else -> Text("Tap the microphone and speak, or type a command.", color = JarvisTextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp)
+                }
+                uiState.voiceErrorMessage?.let { Text(it, color = JarvisRedAlert, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = textInput, onValueChange = { textInput = it }, placeholder = { Text("Tap the microphone and speak, or type a command.", color = JarvisTextSecondary, fontSize = 13.sp) }, modifier = Modifier.weight(1f).testTag("command_input_field"), shape = RoundedCornerShape(14.dp), maxLines = 3)
+            IconButton(onClick = { if (listening) viewModel.stopVoiceListening() else viewModel.startVoiceListening() }, modifier = Modifier.size(54.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("voice_mic_fab")) { Icon(if (listening) Icons.Default.MicOff else Icons.Default.Mic, contentDescription = "Microphone", tint = if (listening) JarvisRedAlert else JarvisCyan, modifier = Modifier.size(29.dp)) }
+            IconButton(onClick = { if (textInput.isNotBlank()) { viewModel.executeTextCommand(textInput); textInput = "" } }, modifier = Modifier.size(44.dp).testTag("send_command_button")) { Icon(Icons.Default.Send, contentDescription = "Send command", tint = JarvisCyan, modifier = Modifier.size(29.dp)) }
+        }
+    }
+}
 
-                // Mic FAB
-                FloatingActionButton(
-                    onClick = {
-                        if (uiState.voiceState == VoiceState.LISTENING) {
-                            viewModel.stopVoiceListening()
-                        } else {
-                            viewModel.startVoiceListening()
-                        }
-                    },
-                    containerColor = if (uiState.voiceState == VoiceState.LISTENING) JarvisRedAlert else JarvisCyan,
-                    contentColor = JarvisNavyDark,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("voice_mic_fab")
-                ) {
-                    Icon(
-                        imageVector = if (uiState.voiceState == VoiceState.LISTENING) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = "Microphone Toggle"
-                    )
+@Composable
+private fun StatusPill(label: String, color: androidx.compose.ui.graphics.Color) {
+    Row(Modifier.clip(RoundedCornerShape(50)).border(1.dp, color.copy(alpha = .6f), RoundedCornerShape(50)).background(color.copy(alpha = .10f)).padding(horizontal = 9.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(color)); Text(label, color = JarvisTextPrimary, fontSize = 10.sp, maxLines = 1)
+    }
+}
+
+@Composable
+fun SettingsHubTab(viewModel: MainViewModel, uiState: MainUiState, destination: String, onDestinationChange: (String) -> Unit) {
+    val destinations = listOf("General", "AI & Models", "Personal OS", "Agent & Vision")
+    Column(Modifier.fillMaxSize()) {
+        Text("Settings", color = JarvisTextPrimary, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 8.dp))
+        androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { items(destinations) { item -> FilterChip(selected = destination == item, onClick = { onDestinationChange(item) }, label = { Text(item, fontSize = 11.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = JarvisCyan, selectedLabelColor = JarvisNavyDark, labelColor = JarvisTextSecondary)) } }
+        when (destination) { "AI & Models" -> AISettingsTab(viewModel); "Personal OS" -> PersonalOsTab(viewModel); "Agent & Vision" -> AgentVisionTab(viewModel, uiState); else -> GeneralSettingsContent(viewModel, uiState) }
+    }
+}
+
+@Composable
+private fun GeneralSettingsContent(viewModel: MainViewModel, uiState: MainUiState) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(22.dp)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Privacy Mode", color = JarvisCyan, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                listOf(PrivacyMode.STRICT to "Strict — prefer local, minimal cloud", PrivacyMode.BALANCED to "Balanced — local first, cloud when needed", PrivacyMode.CLOUD to "Cloud — prioritize advanced reasoning").forEach { (mode, label) ->
+                    Row(Modifier.fillMaxWidth().clickable { viewModel.setPrivacyMode(mode) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) { androidx.compose.material3.RadioButton(selected = uiState.privacyMode == mode, onClick = { viewModel.setPrivacyMode(mode) }, colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = JarvisCyan)); Spacer(Modifier.width(10.dp)); Text(label, color = JarvisTextPrimary, fontSize = 13.sp) }
                 }
             }
         }
-
-        // Quick Command Chips
-        Text(
-            text = "QUICK COMMANDS",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = JarvisTextSecondary,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            val quickCommands = listOf("Battery", "Flashlight on", "Flashlight off", "Volume up", "Time")
-            quickCommands.forEach { cmd ->
-                Card(
-                    modifier = Modifier
-                        .clickable { viewModel.executeTextCommand(cmd) }
-                        .testTag("quick_command_$cmd"),
-                    colors = CardDefaults.cardColors(containerColor = JarvisCardDark),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = cmd,
-                        fontSize = 11.sp,
-                        color = JarvisCyanLight,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                    )
-                }
+        Card(colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(22.dp)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Voice", color = JarvisCyan, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Recognition language", color = JarvisTextPrimary)
+                Text("Jarvis uses the language selected by your Android speech-recognition service. Change it in your device's speech input settings.", color = JarvisTextSecondary, fontSize = 13.sp)
+                Divider(color = JarvisCardDark)
+                Text("Voice status: ${uiState.voiceState.name}", color = JarvisTextPrimary, fontSize = 13.sp)
+                Text("Spoken responses use the Android text-to-speech engine configured on your device.", color = JarvisTextSecondary, fontSize = 13.sp)
             }
         }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Response / Execution Display Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(14.dp)
-            ) {
-                Text(
-                    text = "COMMAND EXECUTION OUTPUT",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = JarvisTextSecondary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (uiState.isProcessing) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            color = JarvisCyan,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text("Processing command with safety verification...", color = JarvisTextSecondary, fontSize = 13.sp)
-                    }
-                } else if (uiState.lastCommandResult != null) {
-                    when (val res = uiState.lastCommandResult) {
-                        is CommandResult.Success -> {
-                            Text(
-                                text = res.message,
-                                color = JarvisCyanLight,
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
-                            )
-                            if (res.details.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                res.details.forEach { (k, v) ->
-                                    Text("• $k: $v", color = JarvisTextSecondary, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                        is CommandResult.Error -> {
-                            Text(
-                                text = "ERROR: ${res.message}",
-                                color = JarvisRedAlert,
-                                fontSize = 14.sp
-                            )
-                            if (res.recoverySuggestion != null) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Suggestion: ${res.recoverySuggestion}", color = JarvisGold, fontSize = 12.sp)
-                            }
-                        }
-                        is CommandResult.RequiresConfirmation -> {
-                            Text(
-                                text = "Awaiting Confirmation: ${res.confirmationPrompt}",
-                                color = JarvisGold,
-                                fontSize = 14.sp
-                            )
-                        }
-                        null -> {}
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Awaiting command input.\nSpeak or enter a command below.",
-                            color = JarvisTextSecondary,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
+        Card(colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(22.dp)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Diagnostics & Safety", color = JarvisCyan, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (uiState.isEmergencyStopped) "Emergency stop is active. Commands are halted." else "Emergency stop is inactive.", color = JarvisTextSecondary, fontSize = 13.sp)
+                Button(onClick = { if (uiState.isEmergencyStopped) viewModel.resetEmergencyStop() else viewModel.triggerEmergencyStop() }, colors = ButtonDefaults.buttonColors(containerColor = if (uiState.isEmergencyStopped) JarvisGreenOk else JarvisRedAlert)) { Text(if (uiState.isEmergencyStopped) "Reset emergency stop" else "Trigger emergency stop", color = JarvisNavyDark) }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Text input bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = textInput,
-                onValueChange = { textInput = it },
-                placeholder = { Text("Ask JARVIS or type command...", color = JarvisTextSecondary, fontSize = 13.sp) },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("command_input_field"),
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 2
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    viewModel.executeTextCommand(textInput)
-                    textInput = ""
-                },
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(JarvisCyan)
-                    .testTag("send_command_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Send,
-                    contentDescription = "Send",
-                    tint = JarvisNavyDark
-                )
+@Composable
+fun PermissionsOverviewTab() {
+    val context = LocalContext.current
+    val permissions = listOf(
+        Triple("Network state", "Detect online/offline status for the offline chip.", "network"), Triple("Internet", "Reach cloud AI providers when privacy mode allows.", "internet"), Triple("Vibrate", "Haptic feedback on emergency stop.", Manifest.permission.VIBRATE), Triple("Microphone", "Voice input and conversation mode.", Manifest.permission.RECORD_AUDIO), Triple("Notifications", "Reminder delivery and status notifications.", Manifest.permission.POST_NOTIFICATIONS), Triple("Camera", "Vision mode for objects, documents and text.", Manifest.permission.CAMERA), Triple("Contacts", "Resolve contact-based commands.", Manifest.permission.READ_CONTACTS), Triple("Phone", "Call placement after explicit confirmation.", Manifest.permission.CALL_PHONE), Triple("SMS", "Send SMS after explicit confirmation.", Manifest.permission.SEND_SMS), Triple("Display over other apps", "Floating Jarvis overlay.", "overlay"), Triple("Accessibility service", "Read screen content and perform supported UI actions.", "accessibility"), Triple("Notification access", "Read and triage notifications.", "notification_access")
+    )
+    Column(Modifier.fillMaxSize()) {
+        Text("Permissions", color = JarvisTextPrimary, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 18.dp, top = 14.dp, bottom = 4.dp))
+        Text("Review what Jarvis can access. Tap a card to open the relevant Android settings.", color = JarvisTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            items(permissions) { (title, description, permission) ->
+                val status = when (permission) { "network", "internet" -> "Manifest"; "overlay" -> if (Settings.canDrawOverlays(context)) "Granted" else "Not granted"; "accessibility" -> "Special access"; "notification_access" -> "Special access"; else -> if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) "Granted" else "Not granted" }
+                Card(Modifier.fillMaxWidth().clickable {
+                    val intent = when (permission) { "overlay" -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")); "accessibility" -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS); "notification_access" -> Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS); else -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")) }
+                    runCatching { context.startActivity(intent) }
+                }, colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(15.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title, color = JarvisTextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text(description, color = JarvisTextSecondary, fontSize = 11.sp, lineHeight = 15.sp) }; Icon(Icons.Default.ChevronRight, contentDescription = "Open $title settings", tint = JarvisTextSecondary) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) { StatusPill(if (permission == Manifest.permission.RECORD_AUDIO) "Phase 3" else "Optional", JarvisCyan); StatusPill(status, if (status == "Granted" || status == "Manifest") JarvisGreenOk else JarvisGold) }
+                    }
+                }
             }
         }
     }
