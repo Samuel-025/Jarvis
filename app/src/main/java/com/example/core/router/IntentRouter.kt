@@ -80,11 +80,24 @@ class IntentRouter(
                 }
 
                 is JarvisIntent.CreateNote -> {
-                    personalOsRepository.saveNote(intent.title, intent.content)
-                    CommandResult.Success(
-                        message = "Note saved: '${intent.title}'",
-                        audioFeedback = "Note saved."
-                    )
+                    if (intent.title.equals("Memory", ignoreCase = true)) {
+                        val fact = intent.content.trim()
+                        personalOsRepository.saveMemory(
+                            key = fact.take(80).ifBlank { "remembered_fact" },
+                            value = fact,
+                            category = "personal"
+                        )
+                        CommandResult.Success(
+                            message = "Remembered: '$fact'",
+                            audioFeedback = "I'll remember that."
+                        )
+                    } else {
+                        personalOsRepository.saveNote(intent.title, intent.content)
+                        CommandResult.Success(
+                            message = "Note saved: '${intent.title}'",
+                            audioFeedback = "Note saved."
+                        )
+                    }
                 }
 
                 is JarvisIntent.CreateTask -> {

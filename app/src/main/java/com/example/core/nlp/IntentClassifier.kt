@@ -6,64 +6,61 @@ import com.example.core.model.VolumeAction
 object IntentClassifier {
     fun classify(rawInput: String): JarvisIntent {
         val normalized = InputNormalizer.normalize(rawInput)
-        if (normalized.isBlank()) {
-            return JarvisIntent.Unknown(rawInput, "Input was empty or blank")
-        }
+        if (normalized.isBlank()) return JarvisIntent.Unknown(rawInput, "Input was empty or blank")
 
-        // 1. Emergency stop check
-        if (normalized == "stop" || normalized == "emergency stop" || normalized == "halt" ||
-            normalized == "abort" || normalized == "cancel everything" || normalized == "stop all"
-        ) {
-            return JarvisIntent.StopAll
-        }
+        // Emergency-stop phrases are intentionally checked before all other commands.
+        if (normalized in setOf(
+                "stop", "emergency stop", "halt", "abort", "cancel everything", "stop all",
+                "sab band karo", "sab kuch band karo", "ruk jao", "bas karo", "रुको", "सब बंद करो"
+            )
+        ) return JarvisIntent.StopAll
 
-        // 2. Flashlight / Torch
-        if (normalized.contains("turn on flashlight") || normalized.contains("torch on") ||
-            normalized == "flashlight on" || normalized.contains("enable flashlight")
-        ) {
-            return JarvisIntent.Flashlight(true)
-        }
-        if (normalized.contains("turn off flashlight") || normalized.contains("torch off") ||
-            normalized == "flashlight off" || normalized.contains("disable flashlight")
-        ) {
-            return JarvisIntent.Flashlight(false)
-        }
+        // Flashlight / torch — English and common Hinglish/Hindi phrases.
+        if (normalized.contains("turn on flashlight") || normalized.contains("enable flashlight") ||
+            normalized == "flashlight on" || normalized == "torch on" ||
+            normalized in setOf("torch chalu karo", "torch chalu kar do", "torch jalao", "flashlight chalu karo", "flashlight jalao", "torch on karo", "टॉर्च चालू करो", "टॉर्च जलाओ", "लाइट चालू करो")
+        ) return JarvisIntent.Flashlight(true)
+        if (normalized.contains("turn off flashlight") || normalized.contains("disable flashlight") ||
+            normalized == "flashlight off" || normalized == "torch off" ||
+            normalized in setOf("torch band karo", "torch band kar do", "torch bujhao", "flashlight band karo", "torch off karo", "टॉर्च बंद करो", "टॉर्च बुझाओ", "लाइट बंद करो")
+        ) return JarvisIntent.Flashlight(false)
 
-        // 3. Volume
-        if (normalized.contains("volume up") || normalized.contains("increase volume") || normalized.contains("louder")) {
-            return JarvisIntent.VolumeControl(VolumeAction.UP)
-        }
-        if (normalized.contains("volume down") || normalized.contains("decrease volume") || normalized.contains("quieter")) {
-            return JarvisIntent.VolumeControl(VolumeAction.DOWN)
-        }
-        if (normalized.contains("mute") || normalized.contains("silence")) {
-            return JarvisIntent.VolumeControl(VolumeAction.MUTE)
-        }
-        if (normalized.contains("unmute")) {
+        // Unmute must be checked before mute because the word "unmute" contains "mute".
+        if (normalized.contains("unmute") || normalized in setOf("awaaz chalu karo", "sound chalu karo", "अनम्यूट करो", "आवाज चालू करो")) {
             return JarvisIntent.VolumeControl(VolumeAction.UNMUTE)
+        }
+        if (normalized.contains("volume up") || normalized.contains("increase volume") || normalized.contains("louder") ||
+            normalized in setOf("volume badhao", "awaz badhao", "awaaz badhao", "sound badhao", "आवाज बढ़ाओ", "वॉल्यूम बढ़ाओ")
+        ) return JarvisIntent.VolumeControl(VolumeAction.UP)
+        if (normalized.contains("volume down") || normalized.contains("decrease volume") || normalized.contains("quieter") ||
+            normalized in setOf("volume kam karo", "awaz kam karo", "awaaz kam karo", "sound kam karo", "आवाज कम करो", "वॉल्यूम कम करो")
+        ) return JarvisIntent.VolumeControl(VolumeAction.DOWN)
+        if (normalized.contains("mute") || normalized.contains("silence") || normalized in setOf("mute karo", "awaaz band karo", "आवाज बंद करो", "म्यूट करो")) {
+            return JarvisIntent.VolumeControl(VolumeAction.MUTE)
         }
         val volumePercentMatch = Regex("set volume (to )?(\\d+)%?").find(normalized)
         if (volumePercentMatch != null) {
             val level = volumePercentMatch.groupValues[2].toIntOrNull()
-            if (level != null) {
-                return JarvisIntent.VolumeControl(VolumeAction.SET_LEVEL, level)
-            }
+            if (level != null) return JarvisIntent.VolumeControl(VolumeAction.SET_LEVEL, level.coerceIn(0, 100))
         }
 
-        // 4. Battery status
-        if (normalized.contains("battery") || normalized.contains("power level") || normalized.contains("charge level")) {
-            return JarvisIntent.BatteryStatus
-        }
+        // Battery and date/time queries.
+        if (normalized.contains("battery") || normalized.contains("power level") || normalized.contains("charge level") ||
+            normalized in setOf("battery kitni hai", "battery kitna hai", "battery percent batao", "battery percentage batao", "battery dikhao", "बैटरी कितनी है", "बैटरी बताओ")
+        ) return JarvisIntent.BatteryStatus
+        if (normalized.contains("what time") || normalized.contains("current time") || normalized.contains("what is the time") ||
+            normalized.contains("what day") || normalized.contains("today's date") || normalized.contains("what is the date") ||
+            normalized in setOf("time kya hua hai", "kitne baje hain", "kitne baje hai", "samay kya hai", "abhi time kya hai", "aaj ki date kya hai", "aaj ka date kya hai", "aaj kaun sa din hai", "अभी कितने बजे हैं", "समय क्या है", "आज की तारीख क्या है", "आज कौन सा दिन है")
+        ) return JarvisIntent.DateTimeQuery
 
-        // 5. Date and Time
-        if (normalized.contains("what time") || normalized.contains("current time") ||
-            normalized.contains("what is the time") || normalized.contains("what day") ||
-            normalized.contains("today's date") || normalized.contains("what is the date")
-        ) {
-            return JarvisIntent.DateTimeQuery
-        }
-
-        // 6. Launch App (e.g., "open youtube", "launch camera", "open chrome")
+        // App launch aliases. Keep the target narrow so arbitrary speech isn't mistaken for a launch.
+        val launchAliases = mapOf(
+            "youtube kholo" to "youtube", "youtube khol do" to "youtube", "youtube khol" to "youtube", "यूट्यूब खोलो" to "youtube",
+            "chrome kholo" to "chrome", "chrome khol do" to "chrome", "क्रोम खोलो" to "chrome",
+            "camera kholo" to "camera", "camera khol do" to "camera", "कैमरा खोलो" to "camera",
+            "settings kholo" to "settings", "settings khol do" to "settings", "सेटिंग्स खोलो" to "settings"
+        )
+        launchAliases[normalized]?.let { return JarvisIntent.LaunchApp(it) }
         if (normalized.startsWith("open ") || normalized.startsWith("launch ")) {
             val target = normalized.removePrefix("open ").removePrefix("launch ").trim()
             if (target.contains("settings") || target.contains("wifi") || target.contains("bluetooth") || target.contains("display")) {
@@ -71,49 +68,55 @@ object IntentClassifier {
             }
             return JarvisIntent.LaunchApp(target)
         }
-
-        // 7. Settings explicit
         if (normalized.startsWith("settings") || normalized.contains("open settings")) {
             val target = normalized.replace("open", "").replace("settings", "").trim()
             return JarvisIntent.OpenSettings(if (target.isBlank()) "general" else target)
         }
 
-        // 8. Personal OS / Notes / Tasks
-        if (normalized.startsWith("note ") || normalized.startsWith("take a note ") || normalized.startsWith("create note ")) {
-            val content = rawInput.substringAfter("note", "").trim().removePrefix(":").removePrefix("-").trim()
-            return JarvisIntent.CreateNote(
-                title = if (content.length > 30) content.take(30) + "..." else content,
-                content = content
-            )
+        // Personal OS: strip the original prefix case-insensitively so capitalized speech is safe.
+        val notePrefixes = listOf("take a note", "create note", "note")
+        if (notePrefixes.any { normalized == it || normalized.startsWith("$it ") || normalized.startsWith("$it:") }) {
+            val prefix = notePrefixes.first { normalized == it || normalized.startsWith("$it ") || normalized.startsWith("$it:") }
+            val content = rawInput.trim().drop(prefix.length).trim().removePrefix(":").removePrefix("-").trim()
+            return JarvisIntent.CreateNote(title = if (content.length > 30) content.take(30) + "..." else content, content = content)
         }
-        if (normalized.startsWith("task ") || normalized.startsWith("add task ") || normalized.startsWith("todo ")) {
-            val taskText = rawInput.substringAfter("task", "").substringAfter("todo", "").trim()
-            return JarvisIntent.CreateTask(title = taskText)
+        val taskPrefixes = listOf("add task", "task", "todo", "to do")
+        if (taskPrefixes.any { normalized == it || normalized.startsWith("$it ") || normalized.startsWith("$it:") }) {
+            val prefix = taskPrefixes.first { normalized == it || normalized.startsWith("$it ") || normalized.startsWith("$it:") }
+            val title = rawInput.trim().drop(prefix.length).trim().removePrefix(":").removePrefix("-").trim()
+            if (title.isNotBlank()) return JarvisIntent.CreateTask(title = title)
         }
-        if (normalized.startsWith("remember ") || normalized.startsWith("save memory ")) {
-            val mem = rawInput.substringAfter("remember", "").substringAfter("memory", "").trim()
-            return JarvisIntent.CreateNote(title = "Memory", content = mem)
+        val memoryPrefixes = listOf("remember that", "remember", "save memory", "store memory", "memory")
+        if (memoryPrefixes.any { normalized == it || normalized.startsWith("$it ") || normalized.startsWith("$it:") }) {
+            val prefix = memoryPrefixes.first { normalized == it || normalized.startsWith("$it ") || normalized.startsWith("$it:") }
+            val fact = rawInput.trim().drop(prefix.length).trim().removePrefix(":").removePrefix("-").trim()
+            if (fact.isNotBlank()) return JarvisIntent.CreateNote(title = "Memory", content = fact)
         }
-        if (normalized == "clear memories" || normalized == "delete all memories") {
+        if (normalized == "clear memories" || normalized == "delete all memories" || normalized == "clear all memories") {
             return JarvisIntent.ClearAllMemories
         }
-        if (normalized.startsWith("recall ") || normalized.startsWith("what did i note") || normalized.startsWith("search notes ")) {
-            val query = normalized.removePrefix("recall ").removePrefix("search notes ").trim()
+        if (normalized.startsWith("recall ") || normalized.startsWith("what did i note") || normalized.startsWith("search notes ") ||
+            normalized.startsWith("yaad dilao") || normalized.startsWith("yaad karo") || normalized.startsWith("याद दिलाओ")
+        ) {
+            val query = when {
+                normalized.startsWith("recall ") -> rawInput.trim().drop("recall ".length).trim()
+                normalized.startsWith("search notes ") -> rawInput.trim().drop("search notes ".length).trim()
+                normalized.startsWith("yaad dilao ") -> rawInput.trim().drop("yaad dilao ".length).trim()
+                normalized.startsWith("yaad karo ") -> rawInput.trim().drop("yaad karo ".length).trim()
+                normalized.startsWith("याद दिलाओ ") -> rawInput.trim().drop("याद दिलाओ ".length).trim()
+                else -> normalized.removePrefix("what did i note").trim()
+            }
             return JarvisIntent.QueryMemory(query)
         }
 
-        // 9. Vision
+        // Vision and bounded agent requests.
         if (normalized.startsWith("see ") || normalized.startsWith("analyze image") || normalized.startsWith("look at this")) {
             return JarvisIntent.VisionAnalyze(prompt = rawInput)
         }
-
-        // 10. Agent Plan
         if (normalized.startsWith("agent ") || normalized.startsWith("plan ") || normalized.startsWith("execute routine ")) {
-            val goal = rawInput.substringAfter("agent").substringAfter("plan").substringAfter("routine").trim()
+            val goal = rawInput.trim().replaceFirst(Regex("(?i)^(agent|plan|execute routine)\\s*"), "").trim()
             return JarvisIntent.AgentPlan(goal = goal)
         }
-
-        // Fallback: General query to AI Brain / Local knowledge
         return JarvisIntent.GeneralQuery(rawInput.trim())
     }
 }

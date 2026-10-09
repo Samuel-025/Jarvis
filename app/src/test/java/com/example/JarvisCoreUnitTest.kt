@@ -90,4 +90,33 @@ class JarvisCoreUnitTest {
         assertTrue(plan.steps.size <= plan.maxStepBudget)
         assertEquals("Good morning routine", plan.goal)
     }
+
+    @Test
+    fun testUnmuteAndHinglishCommands() {
+        val unmute = IntentClassifier.classify("unmute")
+        assertTrue(unmute is JarvisIntent.VolumeControl && unmute.action == VolumeAction.UNMUTE)
+
+        assertTrue(IntentClassifier.classify("torch chalu karo") == JarvisIntent.Flashlight(true))
+        assertTrue(IntentClassifier.classify("torch band karo") == JarvisIntent.Flashlight(false))
+        assertTrue(IntentClassifier.classify("volume badhao") is JarvisIntent.VolumeControl)
+        assertTrue(IntentClassifier.classify("battery kitni hai") is JarvisIntent.BatteryStatus)
+        assertTrue(IntentClassifier.classify("time kya hua hai") is JarvisIntent.DateTimeQuery)
+        val youtube = IntentClassifier.classify("youtube kholo")
+        assertTrue(youtube is JarvisIntent.LaunchApp && youtube.appQuery == "youtube")
+    }
+
+    @Test
+    fun testRememberPhraseIsCaseInsensitiveAndPreservesFact() {
+        val intent = IntentClassifier.classify("Remember that I prefer tea in the morning")
+        assertTrue(intent is JarvisIntent.CreateNote)
+        assertEquals("Memory", (intent as JarvisIntent.CreateNote).title)
+        assertEquals("I prefer tea in the morning", intent.content)
+    }
+
+    @Test
+    fun testUnmuteIsNotMisclassifiedAsMute() {
+        val intent = IntentClassifier.classify("unmute sound")
+        assertTrue(intent is JarvisIntent.VolumeControl)
+        assertEquals(VolumeAction.UNMUTE, (intent as JarvisIntent.VolumeControl).action)
+    }
 }
