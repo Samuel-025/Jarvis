@@ -8,13 +8,21 @@ import com.example.core.model.PrivacyMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 
 class AIProviderManager(
     private val apiKeyStorage: ApiKeyStorage,
     context: Context? = null
 ) : AIBrain {
 
+    companion object {
+        private const val PREFS_NAME = "jarvis_ai_provider_preferences"
+        private const val SELECTED_PROVIDER_KEY = "selected_provider_type"
+    }
+
     private val providers = mutableMapOf<ProviderType, AIProvider>()
+    private val settingsPrefs = context?.applicationContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _configurations = MutableStateFlow<Map<ProviderType, ProviderConfiguration>>(emptyMap())
     val configurations: StateFlow<Map<ProviderType, ProviderConfiguration>> = _configurations.asStateFlow()
@@ -64,8 +72,77 @@ class AIProviderManager(
             type = ProviderType.LOCAL_OFFLINE,
             selectedModelId = local.descriptor.defaultModelId
         )
+        // Restore provider and model preferences before the UI observes this manager.
+        settingsPrefs?.let { prefs ->
+            ProviderType.values().forEach { type ->
+                val base = initConfigs[type] ?: return@forEach
+                val modelId = prefs.getString(modelKey(type), null)?.takeIf { it.isNotBlank() }
+                val endpoint = prefs.getString(endpointKey(type), base.customEndpoint)
+                val enabled = prefs.getBoolean(enabledKey(type), base.isEnabled)
+                initConfigs[type] = base.copy(
+                    selectedModelId = modelId ?: base.selectedModelId,
+                    customEndpoint = endpoint,
+                    isEnabled = enabled
+                )
+            }
+            _selectedProviderType.value = prefs.getString(SELECTED_PROVIDER_KEY, null)
+                ?.let { saved -> runCatching { ProviderType.valueOf(saved) }.getOrNull() }
+                ?: ProviderType.GEMINI
+            _discoveredModels.value = ProviderType.values().mapNotNull { type ->
+                val raw = prefs.getString(discoveredModelsKey(type), null) ?: return@mapNotNull null
+                val models = decodeModels(raw)
+                if (models.isEmpty()) null else type to models
+            }.toMap()
+        }
         _configurations.value = initConfigs
     }
+
+    private fun modelKey(type: ProviderType) = "${type.name}_selected_model"
+    private fun endpointKey(type: ProviderType) = "${type.name}_custom_endpoint"
+    private fun enabledKey(type: ProviderType) = "${type.name}_enabled"
+    private fun discoveredModelsKey(type: ProviderType) = "${type.name}_discovered_models"
+
+    private fun persistConfiguration(config: ProviderConfiguration) {
+        val prefs = settingsPrefs ?: return
+        val editor = prefs.edit()
+            .putString(modelKey(config.type), config.selectedModelId)
+            .putBoolean(enabledKey(config.type), config.isEnabled)
+        if (config.customEndpoint == null) editor.remove(endpointKey(config.type))
+        else editor.putString(endpointKey(config.type), config.customEndpoint)
+        editor.apply()
+    }
+
+    private fun persistDiscoveredModels(type: ProviderType, models: List<ModelDescriptor>) {
+        val prefs = settingsPrefs ?: return
+        val array = JSONArray()
+        models.forEach { model ->
+            val item = JSONObject()
+                .put("id", model.id)
+                .put("displayName", model.displayName)
+                .put("capabilities", JSONArray(model.capabilities.map { it.name }))
+            model.defaultEndpoint?.let { item.put("defaultEndpoint", it) }
+            array.put(item)
+        }
+        prefs.edit().putString(discoveredModelsKey(type), array.toString()).apply()
+    }
+
+    private fun decodeModels(raw: String): List<ModelDescriptor> = try {
+        val array = JSONArray(raw)
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val caps = item.optJSONArray("capabilities")
+            val capabilities = if (caps == null) emptySet() else (0 until caps.length()).mapNotNull { i ->
+                runCatching { ProviderCapability.valueOf(caps.optString(i)) }.getOrNull()
+            }.toSet()
+            ModelDescriptor(
+                id = id,
+                displayName = item.optString("displayName", id),
+                capabilities = capabilities,
+                defaultEndpoint = item.optString("defaultEndpoint").takeIf { it.isNotBlank() }
+            )
+        }
+    } catch (_: Exception) { emptyList() }
 
     fun registerProvider(provider: AIProvider) {
         providers[provider.descriptor.type] = provider
@@ -77,12 +154,14 @@ class AIProviderManager(
 
     fun setSelectedProvider(type: ProviderType) {
         _selectedProviderType.value = type
+        settingsPrefs?.edit()?.putString(SELECTED_PROVIDER_KEY, type.name)?.apply()
     }
 
     fun updateConfiguration(config: ProviderConfiguration) {
         val current = _configurations.value.toMutableMap()
         current[config.type] = config
         _configurations.value = current
+        persistConfiguration(config)
     }
 
     fun saveApiKey(type: ProviderType, key: String): Boolean {
@@ -132,6 +211,7 @@ class AIProviderManager(
             val models = provider.discoverModels(config, key)
             if (models.isNotEmpty()) {
                 _discoveredModels.value = _discoveredModels.value + (type to models)
+                persistDiscoveredModels(type, models)
                 val selected = models.firstOrNull { it.id == config.selectedModelId } ?: models.first()
                 updateConfiguration(config.copy(selectedModelId = selected.id))
                 updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CONNECTED, "Found ${models.size} models. Selected: ${selected.id}", System.currentTimeMillis()))
@@ -170,6 +250,7 @@ class AIProviderManager(
                     val selected = models.firstOrNull { it.id == config.selectedModelId } ?: models.first()
                     updateConfiguration(config.copy(selectedModelId = selected.id))
                     _discoveredModels.value = _discoveredModels.value + (type to models)
+                    persistDiscoveredModels(type, models)
                     setSelectedProvider(type)
                     updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CONNECTED, "Detected ${type.displayName}; found ${models.size} model(s).", System.currentTimeMillis()))
                     return type
