@@ -1,0 +1,175 @@
+package com.example.core.ai.provider
+
+import android.content.Context
+import com.example.core.ai.AIBrain
+import com.example.core.ai.AIResponse
+import com.example.core.ai.storage.ApiKeyStorage
+import com.example.core.model.PrivacyMode
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+class AIProviderManager(
+    private val apiKeyStorage: ApiKeyStorage,
+    context: Context? = null
+) : AIBrain {
+
+    private val providers = mutableMapOf<ProviderType, AIProvider>()
+
+    private val _configurations = MutableStateFlow<Map<ProviderType, ProviderConfiguration>>(emptyMap())
+    val configurations: StateFlow<Map<ProviderType, ProviderConfiguration>> = _configurations.asStateFlow()
+
+    private val _selectedProviderType = MutableStateFlow(ProviderType.GEMINI)
+    val selectedProviderType: StateFlow<ProviderType> = _selectedProviderType.asStateFlow()
+
+    private val _connectionStatuses = MutableStateFlow<Map<ProviderType, ProviderConnectionStatus>>(emptyMap())
+    val connectionStatuses: StateFlow<Map<ProviderType, ProviderConnectionStatus>> = _connectionStatuses.asStateFlow()
+
+    init {
+        // Register default providers
+        val gemini = GeminiProviderAdapter()
+        val openAI = OpenAIProviderAdapter(OpenAIProviderAdapter.defaultDescriptor(ProviderType.OPENAI))
+        val customOpenAI = OpenAIProviderAdapter(
+            OpenAIProviderAdapter.defaultDescriptor(
+                ProviderType.OPENAI_COMPATIBLE,
+                "https://api.groq.com/openai/v1/"
+            )
+        )
+        val local = LocalOfflineProvider()
+
+        registerProvider(gemini)
+        registerProvider(openAI)
+        registerProvider(customOpenAI)
+        registerProvider(local)
+
+        // Initialize default configurations
+        val initConfigs = mutableMapOf<ProviderType, ProviderConfiguration>()
+        initConfigs[ProviderType.GEMINI] = ProviderConfiguration(
+            type = ProviderType.GEMINI,
+            selectedModelId = gemini.descriptor.defaultModelId
+        )
+        initConfigs[ProviderType.OPENAI] = ProviderConfiguration(
+            type = ProviderType.OPENAI,
+            selectedModelId = openAI.descriptor.defaultModelId
+        )
+        initConfigs[ProviderType.OPENAI_COMPATIBLE] = ProviderConfiguration(
+            type = ProviderType.OPENAI_COMPATIBLE,
+            selectedModelId = customOpenAI.descriptor.defaultModelId,
+            customEndpoint = "https://api.groq.com/openai/v1/"
+        )
+        initConfigs[ProviderType.LOCAL_OFFLINE] = ProviderConfiguration(
+            type = ProviderType.LOCAL_OFFLINE,
+            selectedModelId = local.descriptor.defaultModelId
+        )
+        _configurations.value = initConfigs
+    }
+
+    fun registerProvider(provider: AIProvider) {
+        providers[provider.descriptor.type] = provider
+    }
+
+    fun getAllProviders(): List<AIProvider> = providers.values.toList()
+
+    fun getProvider(type: ProviderType): AIProvider? = providers[type]
+
+    fun setSelectedProvider(type: ProviderType) {
+        _selectedProviderType.value = type
+    }
+
+    fun updateConfiguration(config: ProviderConfiguration) {
+        val current = _configurations.value.toMutableMap()
+        current[config.type] = config
+        _configurations.value = current
+    }
+
+    fun saveApiKey(type: ProviderType, key: String): Boolean {
+        val saved = apiKeyStorage.saveKey(type.name, key)
+        if (saved) {
+            updateStatus(type, ProviderConnectionStatus(type, ConnectionState.NOT_CONFIGURED, "Key saved. Tap Test Connection."))
+        }
+        return saved
+    }
+
+    fun removeApiKey(type: ProviderType): Boolean {
+        val removed = apiKeyStorage.removeKey(type.name)
+        if (removed) {
+            updateStatus(type, ProviderConnectionStatus(type, ConnectionState.NOT_CONFIGURED, "API key removed."))
+        }
+        return removed
+    }
+
+    fun hasApiKey(type: ProviderType): Boolean {
+        return apiKeyStorage.hasKey(type.name)
+    }
+
+    fun getMaskedApiKey(type: ProviderType): String {
+        val key = apiKeyStorage.getKey(type.name) ?: return ""
+        if (key.length <= 8) return "••••••••"
+        return "${key.take(4)}••••••••${key.takeLast(4)}"
+    }
+
+    suspend fun testProviderConnection(type: ProviderType): ProviderConnectionStatus {
+        val provider = getProvider(type) ?: return ProviderConnectionStatus(
+            type = type,
+            state = ConnectionState.NOT_CONFIGURED,
+            message = "Provider not found."
+        )
+        val config = _configurations.value[type] ?: ProviderConfiguration(type, provider.descriptor.defaultModelId)
+        val key = apiKeyStorage.getKey(type.name)
+
+        updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CHECKING, "Testing connection..."))
+        val status = provider.testConnection(config, key)
+        updateStatus(type, status)
+        return status
+    }
+
+    private fun updateStatus(type: ProviderType, status: ProviderConnectionStatus) {
+        val current = _connectionStatuses.value.toMutableMap()
+        current[type] = status
+        _connectionStatuses.value = current
+    }
+
+    // AIBrain interface implementation
+    override suspend fun query(
+        prompt: String,
+        privacyMode: PrivacyMode,
+        imageBase64: String?
+    ): AIResponse {
+        // Enforce STRICT privacy: NEVER transmit user content to cloud
+        if (privacyMode == PrivacyMode.STRICT) {
+            return AIResponse.Error(
+                message = "STRICT Privacy Mode active. All cloud transmissions are completely blocked.",
+                isOffline = true
+            )
+        }
+
+        val currentType = _selectedProviderType.value
+        val provider = getProvider(currentType) ?: getProvider(ProviderType.LOCAL_OFFLINE)!!
+        val config = _configurations.value[currentType] ?: ProviderConfiguration(currentType, provider.descriptor.defaultModelId)
+        val apiKey = apiKeyStorage.getKey(currentType.name)
+
+        if (provider.descriptor.requiresApiKey && apiKey.isNullOrBlank()) {
+            return AIResponse.Error(
+                message = "No API key configured for ${provider.descriptor.type.displayName}. Open AI Settings to enter your key or select Local/Offline mode.",
+                isOffline = true
+            )
+        }
+
+        val request = AIRequest(
+            prompt = prompt,
+            imageBase64 = imageBase64,
+            modelId = config.selectedModelId
+        )
+
+        return when (val result = provider.query(request, config, apiKey)) {
+            is AIResponseResult.Success -> AIResponse.Success(
+                text = result.text,
+                tokensUsed = result.tokensUsed
+            )
+            is AIResponseResult.Error -> AIResponse.Error(
+                message = "[${result.providerType.displayName}] ${result.message}",
+                isOffline = result.errorType == ProviderErrorType.LOCAL_FALLBACK || result.errorType == ProviderErrorType.MISSING_KEY
+            )
+        }
+    }
+}

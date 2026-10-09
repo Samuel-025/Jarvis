@@ -1,0 +1,6 @@
+{
+  "name": "JARVIS Mobile",
+  "description": "Autonomous clean-room native Android personal AI operating layer with local commands, voice lifecycle, safety boundaries, persistent memory, and bounded agent execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
