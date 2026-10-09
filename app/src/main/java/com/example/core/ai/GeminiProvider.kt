@@ -36,7 +36,7 @@ class GeminiProvider(
             ""
         }
 
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "your_api_key_here") {
             // Graceful fallback to local heuristic assistant response
             return@withContext AIResponse.Success(
                 text = "JARVIS Local Response: [API Key not configured in Secrets panel]. Local synthesis for: '$prompt'. Local command and personal OS systems remain fully operational.",
