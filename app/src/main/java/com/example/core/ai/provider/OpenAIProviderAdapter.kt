@@ -59,8 +59,56 @@ class OpenAIProviderAdapter(
 
     override fun supportsCapability(capability: ProviderCapability, modelId: String): Boolean {
         val model = descriptor.supportedModels.firstOrNull { it.id == modelId }
-            ?: descriptor.supportedModels.first()
-        return model.capabilities.contains(capability)
+        if (model != null) return model.capabilities.contains(capability)
+        val id = modelId.lowercase()
+        return when (capability) {
+            ProviderCapability.TEXT_GENERATION -> true
+            ProviderCapability.IMAGE_UNDERSTANDING -> listOf("vision", "4o", "llava", "pixtral", "gemini", "claude-3").any(id::contains)
+            ProviderCapability.STRUCTURED_OUTPUT -> listOf("gpt", "gemini", "claude").any(id::contains)
+            ProviderCapability.STREAMING -> true
+        }
+    }
+
+    override suspend fun discoverModels(
+        config: ProviderConfiguration,
+        apiKey: String?
+    ): List<ModelDescriptor> = withContext(Dispatchers.IO) {
+        require(!apiKey.isNullOrBlank()) { "Enter an API key first." }
+        val baseUrl = (config.customEndpoint?.takeIf { it.isNotBlank() } ?: descriptor.defaultEndpoint).let {
+            if (it.endsWith("/")) it else "$it/"
+        }
+        val request = Request.Builder()
+            .url("${baseUrl}models")
+            .header("Authorization", "Bearer $apiKey")
+            .get()
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IOException("Model discovery failed (HTTP ${response.code}): ${parseErrorMessage(body)}")
+            }
+            val data = JSONObject(body).optJSONArray("data")
+                ?: throw IOException("The endpoint did not return an OpenAI-compatible models list.")
+            buildList {
+                for (index in 0 until data.length()) {
+                    val item = data.optJSONObject(index) ?: continue
+                    val id = item.optString("id").trim()
+                    if (id.isBlank()) continue
+                    val lower = id.lowercase()
+                    val capabilities = buildSet {
+                        add(ProviderCapability.TEXT_GENERATION)
+                        if (listOf("vision", "4o", "llava", "pixtral", "gemini", "claude-3").any(lower::contains)) {
+                            add(ProviderCapability.IMAGE_UNDERSTANDING)
+                        }
+                        if (listOf("gpt", "gemini", "claude").any(lower::contains)) {
+                            add(ProviderCapability.STRUCTURED_OUTPUT)
+                        }
+                        add(ProviderCapability.STREAMING)
+                    }
+                    add(ModelDescriptor(id = id, displayName = id, capabilities = capabilities))
+                }
+            }.distinctBy { it.id }.sortedBy { it.id }
+        }
     }
 
     override suspend fun query(

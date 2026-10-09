@@ -41,4 +41,8 @@ interface AIProvider {
     fun supportsCapability(capability: ProviderCapability, modelId: String): Boolean
     suspend fun query(request: AIRequest, config: ProviderConfiguration, apiKey: String?): AIResponseResult
     suspend fun testConnection(config: ProviderConfiguration, apiKey: String?): ProviderConnectionStatus
+
+    /** Fetch models available to this API key and endpoint. */
+    suspend fun discoverModels(config: ProviderConfiguration, apiKey: String?): List<ModelDescriptor> =
+        descriptor.supportedModels
 }

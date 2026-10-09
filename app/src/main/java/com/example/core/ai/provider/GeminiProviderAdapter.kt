@@ -46,8 +46,44 @@ class GeminiProviderAdapter(
 
     override fun supportsCapability(capability: ProviderCapability, modelId: String): Boolean {
         val model = descriptor.supportedModels.firstOrNull { it.id == modelId }
-            ?: descriptor.supportedModels.first()
-        return model.capabilities.contains(capability)
+        if (model != null) return model.capabilities.contains(capability)
+        val id = modelId.lowercase()
+        return when (capability) {
+            ProviderCapability.TEXT_GENERATION -> true
+            ProviderCapability.IMAGE_UNDERSTANDING -> id.contains("flash") || id.contains("pro") || id.contains("vision")
+            ProviderCapability.STRUCTURED_OUTPUT -> id.contains("flash") || id.contains("pro")
+            ProviderCapability.STREAMING -> false
+        }
+    }
+
+    override suspend fun discoverModels(
+        config: ProviderConfiguration,
+        apiKey: String?
+    ): List<ModelDescriptor> = withContext(Dispatchers.IO) {
+        require(!apiKey.isNullOrBlank()) { "Enter a Gemini API key first." }
+        val response = apiService.listModels(apiKey)
+        response.models.orEmpty()
+            .filter { model -> model.supportedGenerationMethods.orEmpty().contains("generateContent") }
+            .mapNotNull { model ->
+                val id = model.name.substringAfterLast("/")
+                if (id.isBlank()) null else {
+                    val lower = id.lowercase()
+                    val capabilities = buildSet {
+                        add(ProviderCapability.TEXT_GENERATION)
+                        if (lower.contains("flash") || lower.contains("pro") || lower.contains("vision")) {
+                            add(ProviderCapability.IMAGE_UNDERSTANDING)
+                            add(ProviderCapability.STRUCTURED_OUTPUT)
+                        }
+                    }
+                    ModelDescriptor(
+                        id = id,
+                        displayName = model.displayName?.takeIf { it.isNotBlank() } ?: id,
+                        capabilities = capabilities
+                    )
+                }
+            }
+            .distinctBy { it.id }
+            .sortedBy { it.id }
     }
 
     override suspend fun query(
@@ -84,7 +120,11 @@ class GeminiProviderAdapter(
                 contents = listOf(ContentDto(parts = parts))
             )
 
-            val response = apiService.generateContent(apiKey = apiKey, request = requestDto)
+            val response = apiService.generateContent(
+                endpoint = "v1beta/models/$modelId:generateContent",
+                apiKey = apiKey,
+                request = requestDto
+            )
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
 
             if (!text.isNullOrBlank()) {

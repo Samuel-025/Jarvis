@@ -66,9 +66,13 @@ fun AISettingsTab(viewModel: MainViewModel) {
     val selectedProviderType by viewModel.selectedProviderType.collectAsStateWithLifecycle()
     val configurations by viewModel.providerConfigurations.collectAsStateWithLifecycle()
     val statuses by viewModel.providerConnectionStatuses.collectAsStateWithLifecycle()
+    val discoveredModels by viewModel.discoveredProviderModels.collectAsStateWithLifecycle()
+    val autoDetectMessage by viewModel.autoDetectMessage.collectAsStateWithLifecycle()
 
     val currentProvider = viewModel.aiProviderManager.getProvider(selectedProviderType)
     val currentConfig = configurations[selectedProviderType]
+    val currentModels = discoveredModels[selectedProviderType]?.takeIf { it.isNotEmpty() }
+        ?: currentProvider?.descriptor?.supportedModels.orEmpty()
     val currentStatus = statuses[selectedProviderType]
 
     var enteredKey by remember(selectedProviderType) { mutableStateOf("") }
@@ -177,7 +181,9 @@ fun AISettingsTab(viewModel: MainViewModel) {
                         ) {
                             val activeModelId = currentConfig?.selectedModelId ?: provider.descriptor.defaultModelId
                             ProviderCapability.values().forEach { cap ->
-                                val supported = provider.supportsCapability(cap, activeModelId)
+                                val supported = currentModels.firstOrNull { it.id == activeModelId }
+                                    ?.capabilities?.contains(cap)
+                                    ?: provider.supportsCapability(cap, activeModelId)
                                 Card(
                                     colors = CardDefaults.cardColors(
                                         containerColor = if (supported) JarvisCardDark else JarvisNavyDark
@@ -197,9 +203,28 @@ fun AISettingsTab(viewModel: MainViewModel) {
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // Model Selection
-                        Text("SELECT MODEL:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = JarvisTextSecondary)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("AVAILABLE MODELS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = JarvisTextSecondary)
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.refreshProviderModels(
+                                        provider.descriptor.type,
+                                        customEndpoint.takeIf { provider.descriptor.allowsCustomEndpoint }
+                                    )
+                                },
+                                modifier = Modifier.testTag("refresh_models_button")
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Fetch models", fontSize = 10.sp)
+                            }
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
-                        provider.descriptor.supportedModels.forEach { model ->
+                        currentModels.forEach { model ->
                             val isSelected = (currentConfig?.selectedModelId ?: provider.descriptor.defaultModelId) == model.id
                             Card(
                                 modifier = Modifier
@@ -307,6 +332,28 @@ fun AISettingsTab(viewModel: MainViewModel) {
                                         Text("Remove Key", color = JarvisRedAlert, fontSize = 12.sp)
                                     }
                                 }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    if (enteredKey.isNotBlank()) {
+                                        viewModel.autoDetectProviderFromKey(
+                                            enteredKey,
+                                            customEndpoint.takeIf { provider.descriptor.type == ProviderType.OPENAI_COMPATIBLE }
+                                        )
+                                    }
+                                },
+                                enabled = enteredKey.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth().testTag("auto_detect_provider_button")
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Auto-detect provider & models", fontSize = 12.sp)
+                            }
+                            autoDetectMessage?.let { message ->
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(message, color = JarvisCyanLight, fontSize = 11.sp)
                             }
                         }
 

@@ -277,12 +277,37 @@ class MainViewModel(
         aiProviderManager.connectionStatuses
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    val discoveredProviderModels: StateFlow<Map<com.example.core.ai.provider.ProviderType, List<com.example.core.ai.provider.ModelDescriptor>>> =
+        aiProviderManager.discoveredModels
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    private val _autoDetectMessage = MutableStateFlow<String?>(null)
+    val autoDetectMessage: StateFlow<String?> = _autoDetectMessage.asStateFlow()
+
     fun setSelectedProvider(type: com.example.core.ai.provider.ProviderType) {
         aiProviderManager.setSelectedProvider(type)
     }
 
     fun saveProviderApiKey(type: com.example.core.ai.provider.ProviderType, key: String): Boolean {
-        return aiProviderManager.saveApiKey(type, key)
+        val saved = aiProviderManager.saveApiKey(type, key)
+        if (saved) viewModelScope.launch { aiProviderManager.refreshModels(type) }
+        return saved
+    }
+
+    fun refreshProviderModels(type: com.example.core.ai.provider.ProviderType, endpoint: String? = null) {
+        viewModelScope.launch { aiProviderManager.refreshModels(type, endpointOverride = endpoint) }
+    }
+
+    fun autoDetectProviderFromKey(key: String, endpoint: String? = null) {
+        viewModelScope.launch {
+            _autoDetectMessage.value = "Checking your API key against supported providers…"
+            val detected = aiProviderManager.autoDetectProvider(key.trim(), endpoint)
+            _autoDetectMessage.value = if (detected == null) {
+                "Could not identify this key. Check that it is valid, or choose the provider and endpoint manually."
+            } else {
+                "Detected ${detected.displayName}. Your key was saved securely and available models were loaded."
+            }
+        }
     }
 
     fun removeProviderApiKey(type: com.example.core.ai.provider.ProviderType): Boolean {

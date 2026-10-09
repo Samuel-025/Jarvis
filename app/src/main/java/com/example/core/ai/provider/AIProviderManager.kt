@@ -25,6 +25,9 @@ class AIProviderManager(
     private val _connectionStatuses = MutableStateFlow<Map<ProviderType, ProviderConnectionStatus>>(emptyMap())
     val connectionStatuses: StateFlow<Map<ProviderType, ProviderConnectionStatus>> = _connectionStatuses.asStateFlow()
 
+    private val _discoveredModels = MutableStateFlow<Map<ProviderType, List<ModelDescriptor>>>(emptyMap())
+    val discoveredModels: StateFlow<Map<ProviderType, List<ModelDescriptor>>> = _discoveredModels.asStateFlow()
+
     init {
         // Register default providers
         val gemini = GeminiProviderAdapter()
@@ -106,6 +109,78 @@ class AIProviderManager(
         val key = apiKeyStorage.getKey(type.name) ?: return ""
         if (key.length <= 8) return "••••••••"
         return "${key.take(4)}••••••••${key.takeLast(4)}"
+    }
+
+    suspend fun refreshModels(
+        type: ProviderType,
+        apiKeyOverride: String? = null,
+        endpointOverride: String? = null
+    ): List<ModelDescriptor> {
+        val provider = getProvider(type) ?: return emptyList()
+        val current = _configurations.value[type]
+            ?: ProviderConfiguration(type, provider.descriptor.defaultModelId)
+        val config = current.copy(
+            customEndpoint = endpointOverride?.takeIf { it.isNotBlank() } ?: current.customEndpoint
+        )
+        val key = apiKeyOverride ?: apiKeyStorage.getKey(type.name)
+        if (provider.descriptor.requiresApiKey && key.isNullOrBlank()) {
+            updateStatus(type, ProviderConnectionStatus(type, ConnectionState.NOT_CONFIGURED, "Enter an API key before discovering models."))
+            return emptyList()
+        }
+        updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CHECKING, "Fetching models available to this API key..."))
+        return try {
+            val models = provider.discoverModels(config, key)
+            if (models.isNotEmpty()) {
+                _discoveredModels.value = _discoveredModels.value + (type to models)
+                val selected = models.firstOrNull { it.id == config.selectedModelId } ?: models.first()
+                updateConfiguration(config.copy(selectedModelId = selected.id))
+                updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CONNECTED, "Found ${models.size} models. Selected: ${selected.id}", System.currentTimeMillis()))
+            } else {
+                updateStatus(type, ProviderConnectionStatus(type, ConnectionState.UNSUPPORTED_MODEL, "No compatible models were returned by this endpoint. Check the API key and endpoint."))
+            }
+            models
+        } catch (e: Exception) {
+            updateStatus(type, ProviderConnectionStatus(type, ConnectionState.NETWORK_ERROR, e.message ?: "Could not fetch models."))
+            emptyList()
+        }
+    }
+
+    suspend fun autoDetectProvider(rawApiKey: String, customEndpoint: String? = null): ProviderType? {
+        if (rawApiKey.isBlank()) return null
+        val candidates = listOf(ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENAI_COMPATIBLE)
+        for (type in candidates) {
+            val provider = getProvider(type) ?: continue
+            val current = _configurations.value[type]
+                ?: ProviderConfiguration(type, provider.descriptor.defaultModelId)
+            val config = if (type == ProviderType.OPENAI_COMPATIBLE && !customEndpoint.isNullOrBlank()) {
+                current.copy(customEndpoint = customEndpoint)
+            } else current
+            updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CHECKING, "Checking whether this key works with ${type.displayName}..."))
+            try {
+                var models = provider.discoverModels(config, rawApiKey)
+                if (models.isEmpty()) {
+                    val test = provider.testConnection(config, rawApiKey)
+                    if (test.state != ConnectionState.CONNECTED) {
+                        updateStatus(type, test)
+                        continue
+                    }
+                    models = provider.descriptor.supportedModels
+                }
+                if (saveApiKey(type, rawApiKey)) {
+                    val selected = models.firstOrNull { it.id == config.selectedModelId } ?: models.first()
+                    updateConfiguration(config.copy(selectedModelId = selected.id))
+                    _discoveredModels.value = _discoveredModels.value + (type to models)
+                    setSelectedProvider(type)
+                    updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CONNECTED, "Detected ${type.displayName}; found ${models.size} model(s).", System.currentTimeMillis()))
+                    return type
+                }
+                updateStatus(type, ProviderConnectionStatus(type, ConnectionState.NETWORK_ERROR, "Provider detected, but the API key could not be saved securely."))
+                return null
+            } catch (e: Exception) {
+                updateStatus(type, ProviderConnectionStatus(type, ConnectionState.NETWORK_ERROR, e.message ?: "Key did not validate for ${type.displayName}."))
+            }
+        }
+        return null
     }
 
     suspend fun testProviderConnection(type: ProviderType): ProviderConnectionStatus {
