@@ -238,11 +238,24 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
         }
     }
     val listening = uiState.voiceState == VoiceState.LISTENING
-    val stateColor = when (uiState.voiceState) { VoiceState.LISTENING -> JarvisCyan; VoiceState.SPEAKING -> JarvisGold; VoiceState.ERROR -> JarvisRedAlert; VoiceState.PROCESSING -> JarvisAccentBlue; VoiceState.IDLE -> JarvisCyan }
+    val stateColor = when {
+        uiState.voiceState == VoiceState.LISTENING -> JarvisCyan
+        uiState.voiceState == VoiceState.SPEAKING -> JarvisGold
+        uiState.voiceState == VoiceState.ERROR -> JarvisRedAlert
+        uiState.voiceState == VoiceState.PROCESSING || uiState.isProcessing -> JarvisAccentBlue
+        else -> JarvisCyan
+    }
+    val voiceStatus = when {
+        uiState.voiceState == VoiceState.ERROR -> "Voice issue"
+        uiState.voiceState == VoiceState.LISTENING -> "Listening"
+        uiState.voiceState == VoiceState.SPEAKING -> "Speaking"
+        uiState.voiceState == VoiceState.PROCESSING || uiState.isProcessing -> "Processing"
+        else -> "Ready"
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusPill(uiState.privacyMode.name.lowercase().replaceFirstChar { it.uppercase() }, JarvisCyan)
-            StatusPill(if (uiState.voiceState == VoiceState.ERROR) "Voice issue" else "Ready", JarvisGreenOk)
+            StatusPill(voiceStatus, stateColor)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { if (uiState.isEmergencyStopped) viewModel.resetEmergencyStop() else viewModel.triggerEmergencyStop() }, modifier = Modifier.size(48.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("emergency_stop_button")) { Icon(if (uiState.isEmergencyStopped) Icons.Default.Refresh else Icons.Default.Stop, contentDescription = "Emergency stop", tint = if (uiState.isEmergencyStopped) JarvisGreenOk else JarvisRedAlert) }
         }
@@ -343,7 +356,7 @@ private fun GeneralSettingsContent(viewModel: MainViewModel, uiState: MainUiStat
         Card(colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(22.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Privacy Mode", color = JarvisCyan, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                listOf(PrivacyMode.STRICT to "Strict — prefer local, minimal cloud", PrivacyMode.BALANCED to "Balanced — local first, cloud when needed", PrivacyMode.CLOUD to "Cloud — prioritize advanced reasoning").forEach { (mode, label) ->
+                listOf(PrivacyMode.STRICT to "Strict — local-only, no cloud data", PrivacyMode.BALANCED to "Balanced — confirm before cloud queries", PrivacyMode.CLOUD to "Cloud — send queries/photos to selected AI").forEach { (mode, label) ->
                     Row(Modifier.fillMaxWidth().clickable { viewModel.setPrivacyMode(mode) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) { androidx.compose.material3.RadioButton(selected = uiState.privacyMode == mode, onClick = { viewModel.setPrivacyMode(mode) }, colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = JarvisCyan)); Spacer(Modifier.width(10.dp)); Text(label, color = JarvisTextPrimary, fontSize = 13.sp) }
                 }
             }
@@ -389,7 +402,7 @@ fun PermissionsOverviewTab() {
         Triple("Network state", "Normal install-time permission used to detect connectivity.", "network"),
         Triple("Vibration", "Normal permission for haptic feedback.", Manifest.permission.VIBRATE),
         Triple("Microphone", "Optional. Requested only when you choose voice input. Text commands work without it.", Manifest.permission.RECORD_AUDIO),
-        Triple("Camera / flashlight", "Optional CAMERA permission is used by the flashlight tool. This build does not capture camera images; Vision currently analyzes a generated test frame.", Manifest.permission.CAMERA)
+        Triple("Camera / flashlight", "Optional CAMERA permission is used by the flashlight tool. Vision opens Android's camera preview and sends a photo for analysis only in Cloud mode.", Manifest.permission.CAMERA)
     )
 
     Column(Modifier.fillMaxSize()) {
@@ -715,6 +728,9 @@ fun PersonalOsTab(viewModel: MainViewModel) {
 fun AgentVisionTab(viewModel: MainViewModel, uiState: MainUiState) {
     var goalInput by remember { mutableStateOf("Prepare morning routine and check battery") }
     var visionPrompt by remember { mutableStateOf("Inspect scene and identify objects") }
+    val cameraPreviewLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicturePreview()
+    ) { bitmap -> if (bitmap != null) viewModel.analyzeVisionBitmap(bitmap, visionPrompt) }
 
     LazyColumn(
         modifier = Modifier
@@ -809,7 +825,7 @@ fun AgentVisionTab(viewModel: MainViewModel, uiState: MainUiState) {
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text("OPTICAL VISION SENSOR", fontWeight = FontWeight.Bold, color = JarvisCyan, fontSize = 13.sp)
-                    Text("Captures and analyzes sensor frames through VisionProvider.", color = JarvisTextSecondary, fontSize = 11.sp)
+                    Text("Opens Android's camera for a real preview photo. Photo analysis is available only in Cloud privacy mode; Strict and Balanced modes never send photos to cloud AI.", color = JarvisTextSecondary, fontSize = 11.sp)
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
@@ -822,15 +838,17 @@ fun AgentVisionTab(viewModel: MainViewModel, uiState: MainUiState) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Button(
-                        onClick = {
-                            // Synthesize test sensor bitmap frame (256x256 test pattern)
-                            val bitmap = android.graphics.Bitmap.createBitmap(256, 256, android.graphics.Bitmap.Config.ARGB_8888)
-                            viewModel.analyzeVisionBitmap(bitmap, visionPrompt)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan),
+                        onClick = { cameraPreviewLauncher.launch(null) },
+                        enabled = uiState.privacyMode == PrivacyMode.CLOUD && !uiState.isProcessing,
+                        colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan, disabledContainerColor = JarvisSurfaceDark),
                         modifier = Modifier.fillMaxWidth().testTag("analyze_vision_button")
                     ) {
-                        Text("Capture Frame & Analyze", color = JarvisNavyDark, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(
+                            if (uiState.privacyMode == PrivacyMode.CLOUD) "Take Photo & Analyze" else "Switch to Cloud mode to analyze photos",
+                            color = if (uiState.privacyMode == PrivacyMode.CLOUD) JarvisNavyDark else JarvisTextSecondary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
 
                     uiState.visionAnalysisResult?.let { res ->

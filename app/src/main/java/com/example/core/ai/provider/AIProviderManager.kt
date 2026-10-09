@@ -291,18 +291,18 @@ class AIProviderManager(
         privacyMode: PrivacyMode,
         imageBase64: String?
     ): AIResponse {
-        // Enforce STRICT privacy: NEVER transmit user content to cloud
-        if (privacyMode == PrivacyMode.STRICT) {
-            return AIResponse.Error(
-                message = "STRICT Privacy Mode active. All cloud transmissions are completely blocked.",
-                isOffline = true
-            )
+        // STRICT mode is useful only if it can still answer locally. Never route
+        // strict-mode prompts or images through the selected cloud provider.
+        val currentType = if (privacyMode == PrivacyMode.STRICT) {
+            ProviderType.LOCAL_OFFLINE
+        } else {
+            _selectedProviderType.value
         }
-
-        val currentType = _selectedProviderType.value
-        val provider = getProvider(currentType) ?: getProvider(ProviderType.LOCAL_OFFLINE)!!
-        val config = _configurations.value[currentType] ?: ProviderConfiguration(currentType, provider.descriptor.defaultModelId)
-        val apiKey = apiKeyStorage.getKey(currentType.name)
+        val provider = getProvider(currentType)
+            ?: return AIResponse.Error("The selected AI provider is unavailable.", isOffline = true)
+        val config = _configurations.value[currentType]
+            ?: ProviderConfiguration(currentType, provider.descriptor.defaultModelId)
+        val apiKey = if (currentType == ProviderType.LOCAL_OFFLINE) null else apiKeyStorage.getKey(currentType.name)
 
         if (provider.descriptor.requiresApiKey && apiKey.isNullOrBlank()) {
             return AIResponse.Error(

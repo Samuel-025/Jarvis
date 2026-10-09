@@ -9,6 +9,10 @@ sealed class VisionResult {
 
 interface VisionProvider {
     suspend fun analyze(bitmap: Bitmap, prompt: String = "Describe what you see"): VisionResult
+
+    /** Privacy-aware entry point; local/test providers may keep their existing implementation. */
+    suspend fun analyze(bitmap: Bitmap, prompt: String, privacyMode: com.example.core.model.PrivacyMode): VisionResult =
+        analyze(bitmap, prompt)
 }
 
 class TestStubVisionProvider : VisionProvider {

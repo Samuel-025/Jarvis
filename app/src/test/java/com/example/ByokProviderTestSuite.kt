@@ -141,9 +141,10 @@ class ByokProviderTestSuite {
         assertTrue(resp is com.example.core.ai.AIResponse.Success)
         assertTrue((resp as com.example.core.ai.AIResponse.Success).text.contains("JARVIS Local Offline Response"))
 
-        // Under STRICT mode, even cloud query must be blocked
+        // STRICT mode must route locally even when a cloud provider is selected.
+        manager.setSelectedProvider(ProviderType.OPENAI)
         val strictResp = manager.query("Hello", com.example.core.model.PrivacyMode.STRICT)
-        assertTrue(strictResp is com.example.core.ai.AIResponse.Error)
-        assertTrue((strictResp as com.example.core.ai.AIResponse.Error).isOffline)
+        assertTrue(strictResp is com.example.core.ai.AIResponse.Success)
+        assertTrue((strictResp as com.example.core.ai.AIResponse.Success).text.contains("JARVIS Local Offline Response"))
     }
 }

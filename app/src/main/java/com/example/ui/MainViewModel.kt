@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.graphics.Bitmap
+import android.speech.SpeechRecognizer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -46,8 +47,21 @@ class MainViewModel(
     private val serviceLocator: ServiceLocator
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(MainUiState())
+    private val privacyPreferences = serviceLocator.appContext.getSharedPreferences(
+        "jarvis_app_preferences", android.content.Context.MODE_PRIVATE
+    )
+    private val _uiState = MutableStateFlow(
+        MainUiState(
+            privacyMode = runCatching {
+                PrivacyMode.valueOf(
+                    privacyPreferences.getString("privacy_mode", PrivacyMode.BALANCED.name)
+                        ?: PrivacyMode.BALANCED.name
+                )
+            }.getOrDefault(PrivacyMode.BALANCED)
+        )
+    )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+    private var speechGeneration: Long = 0L
 
     // Observe Room data
     val notes: StateFlow<List<NoteEntity>> = serviceLocator.personalOsRepository.allNotes
@@ -85,11 +99,13 @@ class MainViewModel(
     }
 
     fun setPrivacyMode(mode: PrivacyMode) {
+        privacyPreferences.edit().putString("privacy_mode", mode.name).apply()
         _uiState.value = _uiState.value.copy(privacyMode = mode)
     }
 
     fun triggerEmergencyStop() {
         EmergencyStop.trigger("User initiated emergency stop via UI")
+        speechGeneration++
         serviceLocator.textToSpeechAdapter.stop()
         serviceLocator.speechRecognizerAdapter.cancel()
         _uiState.value = _uiState.value.copy(
@@ -107,16 +123,9 @@ class MainViewModel(
         val trimmed = commandText.trim()
         if (trimmed.isBlank()) return
 
-        // Clear any previous stale voice error
-        _uiState.value = _uiState.value.copy(
-            voiceErrorMessage = null,
-            isProcessing = true
-        )
-
-        viewModelScope.launch {
-            val intent = IntentClassifier.classify(trimmed)
-            executeIntent(intent, source = "USER_TEXT")
-        }
+        // A new command should not leave stale voice errors or an old result visible.
+        _uiState.value = _uiState.value.copy(voiceErrorMessage = null, lastCommandResult = null)
+        executeIntent(IntentClassifier.classify(trimmed), source = "USER_TEXT")
     }
 
     fun executeIntent(intent: JarvisIntent, source: String, isConfirmed: Boolean = false) {
@@ -129,26 +138,30 @@ class MainViewModel(
                 isConfirmed = isConfirmed
             )
 
-            _uiState.value = _uiState.value.copy(
-                lastCommandResult = result,
-                isProcessing = false
-            )
+            _uiState.value = _uiState.value.copy(lastCommandResult = result)
 
-            // TTS feedback if result has audio feedback
-            if (result is CommandResult.Success && result.audioFeedback != null) {
-                _uiState.value = _uiState.value.copy(voiceState = VoiceState.SPEAKING)
-                serviceLocator.textToSpeechAdapter.speak(result.audioFeedback) {
-                    _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
-                }
-            }
-
-            // If intent was AgentPlan, launch the executor
+            // Keep processing visible until the bounded agent has actually finished.
             if (intent is JarvisIntent.AgentPlan && result is CommandResult.Success) {
                 val plan = serviceLocator.agentPlanner.createPlan(intent.goal)
                 _uiState.value = _uiState.value.copy(currentAgentPlan = plan)
                 serviceLocator.agentExecutor.executePlan(plan) { updatedPlan ->
                     _uiState.value = _uiState.value.copy(currentAgentPlan = updatedPlan)
                 }
+            }
+
+            _uiState.value = _uiState.value.copy(isProcessing = false)
+            if (result is CommandResult.Success && !result.audioFeedback.isNullOrBlank()) {
+                val generation = ++speechGeneration
+                if (!_uiState.value.isEmergencyStopped && _uiState.value.voiceState != VoiceState.LISTENING) {
+                    _uiState.value = _uiState.value.copy(voiceState = VoiceState.SPEAKING)
+                    serviceLocator.textToSpeechAdapter.speak(result.audioFeedback) {
+                        if (generation == speechGeneration && _uiState.value.voiceState == VoiceState.SPEAKING) {
+                            _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
+                        }
+                    }
+                }
+            } else if (source == "USER_VOICE" && _uiState.value.voiceState == VoiceState.PROCESSING) {
+                _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
             }
         }
     }
@@ -170,10 +183,13 @@ class MainViewModel(
     // Voice lifecycle
     fun startVoiceListening() {
         if (EmergencyStop.isActive()) return
+        speechGeneration++
         serviceLocator.textToSpeechAdapter.stop()
         _uiState.value = _uiState.value.copy(
             voiceState = VoiceState.LISTENING,
-            voiceErrorMessage = null
+            voiceErrorMessage = null,
+            lastCommandResult = null,
+            lastRecognizedSpeech = ""
         )
 
         serviceLocator.speechRecognizerAdapter.startListening(
@@ -183,17 +199,17 @@ class MainViewModel(
                     lastRecognizedSpeech = text,
                     voiceErrorMessage = null
                 )
-                // Execute recognized command
-                viewModelScope.launch {
-                    val intent = IntentClassifier.classify(text)
-                    executeIntent(intent, source = "USER_VOICE")
-                    _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
-                }
+                // Execute recognized command without resetting voice state before it completes.
+                executeIntent(IntentClassifier.classify(text), source = "USER_VOICE")
             },
             onError = { code, msg ->
+                val recoverableNoSpeech = code == SpeechRecognizer.ERROR_NO_MATCH ||
+                    code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                 _uiState.value = _uiState.value.copy(
-                    voiceState = VoiceState.ERROR,
-                    voiceErrorMessage = msg
+                    voiceState = if (recoverableNoSpeech) VoiceState.IDLE else VoiceState.ERROR,
+                    voiceErrorMessage = if (recoverableNoSpeech) {
+                        "I didn't catch that. Tap the microphone to try again, or type your command."
+                    } else msg
                 )
             }
         )
@@ -209,13 +225,20 @@ class MainViewModel(
     fun analyzeVisionBitmap(bitmap: Bitmap, prompt: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
-            val result = serviceLocator.visionProvider.analyze(bitmap, prompt)
-            _uiState.value = _uiState.value.copy(
-                visionAnalysisResult = result,
-                isProcessing = false
-            )
-            if (result is VisionResult.Success) {
-                serviceLocator.textToSpeechAdapter.speak(result.description)
+            val result = try {
+                serviceLocator.visionProvider.analyze(bitmap, prompt, _uiState.value.privacyMode)
+            } catch (e: Exception) {
+                VisionResult.Error(e.message ?: "Vision analysis failed unexpectedly.")
+            }
+            _uiState.value = _uiState.value.copy(visionAnalysisResult = result, isProcessing = false)
+            if (result is VisionResult.Success && !_uiState.value.isEmergencyStopped) {
+                val generation = ++speechGeneration
+                _uiState.value = _uiState.value.copy(voiceState = VoiceState.SPEAKING)
+                serviceLocator.textToSpeechAdapter.speak(result.description) {
+                    if (generation == speechGeneration && _uiState.value.voiceState == VoiceState.SPEAKING) {
+                        _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
+                    }
+                }
             }
         }
     }

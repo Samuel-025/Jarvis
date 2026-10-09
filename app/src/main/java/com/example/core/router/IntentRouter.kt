@@ -97,7 +97,6 @@ class IntentRouter(
 
                 is JarvisIntent.QueryMemory -> {
                     val results = personalOsRepository.searchMemories(intent.query)
-                    val noteResults = personalOsRepository.searchMemories(intent.query)
                     if (results.isNotEmpty()) {
                         val text = results.joinToString("\n") { "• ${it.key}: ${it.value}" }
                         CommandResult.Success(
@@ -121,9 +120,9 @@ class IntentRouter(
                 }
 
                 is JarvisIntent.VisionAnalyze -> {
-                    CommandResult.Success(
-                        message = "Vision request registered for prompt '${intent.prompt}'. Open Vision tab to view camera stream.",
-                        audioFeedback = "Opening vision module."
+                    CommandResult.Error(
+                        message = "Vision analysis needs a real photo. Open Settings → Agent & Vision and use Take Photo & Analyze. Cloud image analysis requires Cloud privacy mode.",
+                        errorType = ErrorType.INVALID_INPUT
                     )
                 }
 
@@ -135,25 +134,17 @@ class IntentRouter(
                 }
 
                 is JarvisIntent.GeneralQuery -> {
-                    when (privacyMode) {
-                        PrivacyMode.STRICT -> {
-                            CommandResult.Success(
-                                message = "STRICT Privacy Mode active. Offline processing: Query '${intent.query}' logged locally. Cloud AI transmission disabled.",
-                                audioFeedback = "Strict privacy mode. Local response only."
-                            )
-                        }
-                        PrivacyMode.BALANCED, PrivacyMode.CLOUD -> {
-                            when (val aiResponse = aiBrain.query(intent.query, privacyMode)) {
-                                is AIResponse.Success -> CommandResult.Success(
-                                    message = aiResponse.text,
-                                    audioFeedback = aiResponse.text
-                                )
-                                is AIResponse.Error -> CommandResult.Error(
-                                    message = aiResponse.message,
-                                    errorType = if (aiResponse.isOffline) ErrorType.PRIVACY_RESTRICTED else ErrorType.EXECUTION_FAILED
-                                )
-                            }
-                        }
+                    // AIProviderManager enforces local-only behavior in STRICT mode.
+                    // Do not claim success with a fabricated response when a provider fails.
+                    when (val aiResponse = aiBrain.query(intent.query, privacyMode)) {
+                        is AIResponse.Success -> CommandResult.Success(
+                            message = aiResponse.text,
+                            audioFeedback = aiResponse.text
+                        )
+                        is AIResponse.Error -> CommandResult.Error(
+                            message = aiResponse.message,
+                            errorType = if (aiResponse.isOffline) ErrorType.PRIVACY_RESTRICTED else ErrorType.EXECUTION_FAILED
+                        )
                     }
                 }
 
