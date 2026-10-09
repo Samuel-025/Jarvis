@@ -124,17 +124,21 @@ class JarvisCoreUnitTest {
     fun testPhoneActionsAreDraftedOrDelegatedSafely() {
         val call = IntentClassifier.classify("call 9876543210")
         assertTrue(call is JarvisIntent.PhoneAction)
-        assertEquals("dial_phone", (call as JarvisIntent.PhoneAction).actionType)
-        assertEquals("9876543210", call.params["number"])
+        val callAction = call as JarvisIntent.PhoneAction
+        assertEquals("dial_phone", callAction.actionType)
+        assertEquals("9876543210", callAction.params["number"])
 
         val sms = IntentClassifier.classify("text 9876543210 saying Hello from Jarvis")
         assertTrue(sms is JarvisIntent.PhoneAction)
-        assertEquals("send_sms_draft", (sms as JarvisIntent.PhoneAction).actionType)
-        assertEquals("Hello from Jarvis", sms.params["message"])
+        val smsAction = sms as JarvisIntent.PhoneAction
+        assertEquals("send_sms_draft", smsAction.actionType)
+        assertEquals("Hello from Jarvis", smsAction.params["message"])
 
         val timer = IntentClassifier.classify("set timer for 5 minutes")
         assertTrue(timer is JarvisIntent.PhoneAction)
-        assertEquals("300", (timer as JarvisIntent.PhoneAction).params["seconds"])
+        val timerAction = timer as JarvisIntent.PhoneAction
+        assertEquals("set_timer", timerAction.actionType)
+        assertEquals("300", timerAction.params["seconds"])
     }
 
     @Test
