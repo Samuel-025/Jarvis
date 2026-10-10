@@ -5,6 +5,7 @@ import com.example.core.memory.MemoryEntity
 import com.example.core.memory.NoteEntity
 import com.example.core.memory.OkfMemoryCodec
 import com.example.core.memory.RagContextBuilder
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +29,14 @@ class MemoryRagOkfTest {
         assertTrue(result.isEmpty())
     }
 
+    @Test fun ragWeightsTitleMatchMoreThanBodyOnlyMatch() {
+        val result = RagContextBuilder.build("Python learning plan", listOf(
+            RagContextBuilder.Snippet("Python learning plan", "Review this later", "note", 1),
+            RagContextBuilder.Snippet("General note", "Python learning plan was mentioned once", "note", 2)
+        ), maxItems = 1)
+        assertTrue(result.contains("title=Python learning plan"))
+    }
+
     @Test fun okfBundleContainsV02FrontmatterAndPortableConceptFiles() {
         val bundle = OkfMemoryCodec.exportBundle(
             memories = listOf(MemoryEntity(id = 7, key = "Laptop budget", value = "45000 INR", category = "preference", timestamp = 1_790_000_000_000)),
@@ -39,6 +48,33 @@ class MemoryRagOkfTest {
         assertTrue(bundle["memories/memory-7.md"]!!.contains("45000 INR"))
         assertTrue(bundle["notes/note-2.md"]!!.contains("Learn Python"))
         assertTrue(bundle["conversations/message-3.md"]!!.contains("Remember my plan"))
+    }
+
+    @Test fun okfImportValidatesVersionAndParsesMemoryAndNoteConcepts() {
+        val files = mapOf(
+            "index.md" to "---\ntype: Knowledge Bundle\nokf_version: \"0.2\"\n---\n",
+            "memories/memory-7.md" to "---\ntype: 'Memory'\ntitle: 'Laptop budget'\ndescription: 'preference'\n---\n45000 INR",
+            "notes/note-2.md" to "---\ntype: 'Note'\ntitle: 'Study plan'\ndescription: 'Saved note'\n---\nLearn Python",
+            "conversations/message-3.md" to "---\ntype: 'Conversation Message'\ntitle: 'USER: hello'\n---\nhello",
+            "../unsafe.md" to "ignore"
+        )
+        val report = OkfMemoryCodec.parseImportBundle(files)
+        assertEquals(2, report.items.size)
+        assertEquals(1, report.skippedFiles)
+        assertTrue(report.errors.isEmpty())
+        assertEquals("45000 INR", report.items.first().body)
+    }
+
+    @Test fun okfImportRejectsWrongVersionAndMalformedConcepts() {
+        val wrongVersion = OkfMemoryCodec.parseImportBundle(mapOf("index.md" to "---\nokf_version: \"9.0\"\n---"))
+        assertTrue(wrongVersion.items.isEmpty())
+        assertTrue(wrongVersion.errors.isNotEmpty())
+        val malformed = OkfMemoryCodec.parseImportBundle(mapOf(
+            "index.md" to "---\nokf_version: \"0.2\"\n---",
+            "memories/memory-1.md" to "not frontmatter"
+        ))
+        assertTrue(malformed.items.isEmpty())
+        assertTrue(malformed.errors.any { it.contains("frontmatter") })
     }
 
     @Test fun okfYamlEscapesQuotesInUserSuppliedTitles() {

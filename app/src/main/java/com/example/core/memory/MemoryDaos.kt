@@ -24,6 +24,9 @@ interface MemoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMemory(memory: MemoryEntity): Long
 
+    @Update
+    suspend fun updateMemory(memory: MemoryEntity)
+
     @Query("DELETE FROM memories WHERE id = :id")
     suspend fun deleteMemory(id: Long)
 
@@ -47,6 +50,9 @@ interface NoteDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNote(note: NoteEntity): Long
+
+    @Update
+    suspend fun updateNote(note: NoteEntity)
 
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNote(id: Long)

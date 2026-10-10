@@ -16,13 +16,21 @@ class PersonalOsRepository(
     val recentConversation: Flow<List<ConversationMessageEntity>> = conversationDao.getRecentMessages(80)
 
     suspend fun saveMemory(key: String, value: String, category: String = "general") =
-        memoryDao.insertMemory(MemoryEntity(key = key, value = value, category = category))
+        memoryDao.insertMemory(MemoryEntity(key = key, value = redactSecrets(value).trim().take(12000), category = category))
     suspend fun searchMemories(query: String) = memoryDao.searchMemories(query)
+    suspend fun updateMemory(memory: MemoryEntity) = memoryDao.updateMemory(
+        memory.copy(key = memory.key.trim().take(200), value = redactSecrets(memory.value).trim().take(12000), category = memory.category.trim().take(80))
+    )
     suspend fun deleteMemory(id: Long) = memoryDao.deleteMemory(id)
     suspend fun clearMemories() = memoryDao.clearAllMemories()
 
     fun searchNotes(query: String): Flow<List<NoteEntity>> = noteDao.searchNotes(query)
-    suspend fun saveNote(title: String, content: String) = noteDao.insertNote(NoteEntity(title = title, content = content))
+    suspend fun saveNote(title: String, content: String) = noteDao.insertNote(
+        NoteEntity(title = title.trim().take(200), content = redactSecrets(content).trim().take(12000))
+    )
+    suspend fun updateNote(note: NoteEntity) = noteDao.updateNote(
+        note.copy(title = note.title.trim().take(200), content = redactSecrets(note.content).trim().take(12000))
+    )
     suspend fun deleteNote(id: Long) = noteDao.deleteNote(id)
     suspend fun clearNotes() = noteDao.clearAllNotes()
 
@@ -52,7 +60,41 @@ class PersonalOsRepository(
         return RagContextBuilder.build(query, memories + notes + messages)
     }
 
-    /** Returns a portable OKF v0.2 bundle as relative Markdown paths and file contents. */
+    data class OkfImportSummary(val importedMemories: Int, val importedNotes: Int, val skippedFiles: Int, val errors: List<String>)
+
+    /**
+     * Imports validated OKF concepts without replacing existing rows. Identical title/value pairs
+     * are skipped, making repeated imports safe. The caller controls ZIP decoding and user consent.
+     */
+    suspend fun importOkfBundle(files: Map<String, String>): OkfImportSummary {
+        val report = OkfMemoryCodec.parseImportBundle(files)
+        var importedMemories = 0
+        var importedNotes = 0
+        val existingMemories = memoryDao.getAllMemoriesOnce().map { it.key.trim().lowercase() to it.value.trim().lowercase() }.toMutableSet()
+        val existingNotes = noteDao.getAllNotesOnce().map { it.title.trim().lowercase() to it.content.trim().lowercase() }.toMutableSet()
+        report.items.forEach { item ->
+            when (item.kind) {
+                OkfMemoryCodec.ImportItem.Kind.MEMORY -> {
+                    val key = item.title.trim()
+                    val value = redactSecrets(item.body).trim().take(12000)
+                    if (existingMemories.add(key.lowercase() to value.lowercase())) {
+                        memoryDao.insertMemory(MemoryEntity(key = key.take(200), value = value, category = item.category.take(80)))
+                        importedMemories++
+                    }
+                }
+                OkfMemoryCodec.ImportItem.Kind.NOTE -> {
+                    val title = item.title.trim()
+                    val content = redactSecrets(item.body).trim().take(12000)
+                    if (existingNotes.add(title.lowercase() to content.lowercase())) {
+                        noteDao.insertNote(NoteEntity(title = title.take(200), content = content))
+                        importedNotes++
+                    }
+                }
+            }
+        }
+        return OkfImportSummary(importedMemories, importedNotes, report.skippedFiles, report.errors)
+    }
+
     private fun redactSecrets(text: String): String = text
         .replace(Regex("(?i)\\bsk-(?:or-v1-)?[A-Za-z0-9_-]{16,}\\b"), "[REDACTED_SECRET]")
         .replace(Regex("\\bAIza[0-9A-Za-z_-]{20,}\\b"), "[REDACTED_SECRET]")
