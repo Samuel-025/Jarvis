@@ -13,6 +13,7 @@ import com.example.core.audit.AuditEvent
 import com.example.core.di.ServiceLocator
 import com.example.core.integrations.IntegrationStatus
 import com.example.core.memory.MemoryEntity
+import com.example.core.memory.ConversationMessageEntity
 import com.example.core.memory.NoteEntity
 import com.example.core.memory.RoutineEntity
 import com.example.core.memory.TaskEntity
@@ -35,6 +36,7 @@ import kotlinx.coroutines.launch
 
 data class MainUiState(
     val privacyMode: PrivacyMode = PrivacyMode.BALANCED,
+    val includeMemoryInCloud: Boolean = false,
     val voiceState: VoiceState = VoiceState.IDLE,
     val lastRecognizedSpeech: String = "",
     val voiceErrorMessage: String? = null,
@@ -63,7 +65,8 @@ class MainViewModel(
                     privacyPreferences.getString("privacy_mode", PrivacyMode.BALANCED.name)
                         ?: PrivacyMode.BALANCED.name
                 )
-            }.getOrDefault(PrivacyMode.BALANCED)
+            }.getOrDefault(PrivacyMode.BALANCED),
+            includeMemoryInCloud = privacyPreferences.getBoolean("include_memory_in_cloud", false)
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -77,6 +80,9 @@ class MainViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val memories: StateFlow<List<MemoryEntity>> = serviceLocator.personalOsRepository.allMemories
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val conversationHistory: StateFlow<List<ConversationMessageEntity>> = serviceLocator.personalOsRepository.recentConversation
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val routines: StateFlow<List<RoutineEntity>> = serviceLocator.personalOsRepository.allRoutines
@@ -109,6 +115,11 @@ class MainViewModel(
         _uiState.value = _uiState.value.copy(privacyMode = mode)
     }
 
+    fun setIncludeMemoryInCloud(enabled: Boolean) {
+        privacyPreferences.edit().putBoolean("include_memory_in_cloud", enabled).apply()
+        _uiState.value = _uiState.value.copy(includeMemoryInCloud = enabled)
+    }
+
     fun triggerEmergencyStop() {
         EmergencyStop.trigger("User initiated emergency stop via UI")
         speechGeneration++
@@ -131,10 +142,10 @@ class MainViewModel(
 
         // A new command should not leave stale voice errors or an old result visible.
         _uiState.value = _uiState.value.copy(voiceErrorMessage = null, lastCommandResult = null)
-        executeIntent(IntentClassifier.classify(trimmed), source = "USER_TEXT")
+        executeIntent(IntentClassifier.classify(trimmed), source = "USER_TEXT", conversationInput = trimmed)
     }
 
-    fun executeIntent(intent: JarvisIntent, source: String, isConfirmed: Boolean = false) {
+    fun executeIntent(intent: JarvisIntent, source: String, isConfirmed: Boolean = false, conversationInput: String? = null) {
         // Flashlight control needs CAMERA access. Request it from the visible UI only when
         // the user actually invokes the torch, including through voice commands.
         if (!EmergencyStop.isActive() && intent is JarvisIntent.Flashlight &&
@@ -151,15 +162,27 @@ class MainViewModel(
             return
         }
         viewModelScope.launch {
+            if (!conversationInput.isNullOrBlank()) {
+                serviceLocator.personalOsRepository.saveConversationMessage("USER", conversationInput, source)
+            }
             _uiState.value = _uiState.value.copy(isProcessing = true)
             val result = serviceLocator.intentRouter.route(
                 intent = intent,
                 privacyMode = _uiState.value.privacyMode,
+                includeMemoryInCloud = _uiState.value.includeMemoryInCloud,
                 source = source,
                 isConfirmed = isConfirmed
             )
 
             _uiState.value = _uiState.value.copy(lastCommandResult = result)
+            if (!conversationInput.isNullOrBlank()) {
+                val assistantText = when (result) {
+                    is CommandResult.Success -> result.message
+                    is CommandResult.Error -> result.message
+                    is CommandResult.RequiresConfirmation -> result.confirmationPrompt
+                }
+                serviceLocator.personalOsRepository.saveConversationMessage("ASSISTANT", assistantText, "JARVIS_RESPONSE")
+            }
 
             // Keep processing visible until the bounded agent has actually finished.
             if (intent is JarvisIntent.AgentPlan && result is CommandResult.Success) {
@@ -244,7 +267,7 @@ class MainViewModel(
                     voiceErrorMessage = null
                 )
                 // Execute recognized command without resetting voice state before it completes.
-                executeIntent(IntentClassifier.classify(text), source = "USER_VOICE")
+                executeIntent(IntentClassifier.classify(text), source = "USER_VOICE", conversationInput = text)
             },
             onError = { code, msg ->
                 if (generation != speechGeneration) return@startListening
@@ -332,6 +355,8 @@ class MainViewModel(
             serviceLocator.personalOsRepository.deleteMemory(id)
         }
     }
+
+    suspend fun exportOkfBundle(): Map<String, String> = serviceLocator.personalOsRepository.exportOkfBundle()
 
     val aiProviderManager = serviceLocator.aiProviderManager
 

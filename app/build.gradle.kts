@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.jarvis.osapp"
     minSdk = 31
     targetSdk = 36
-    versionCode = 9
-    versionName = "5.4"
+    versionCode = 10
+    versionName = "5.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -123,6 +123,8 @@ dependencies {
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
+  implementation("com.google.mlkit:text-recognition:16.0.1")
+  implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)

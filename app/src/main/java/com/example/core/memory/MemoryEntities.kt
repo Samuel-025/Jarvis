@@ -37,3 +37,13 @@ data class RoutineEntity(
     val actionsJson: String, // comma or json list of intents
     val isEnabled: Boolean = true
 )
+
+@Entity(tableName = "conversation_messages")
+data class ConversationMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sessionId: String = "main",
+    val role: String,
+    val content: String,
+    val source: String = "USER_TEXT",
+    val timestamp: Long = System.currentTimeMillis()
+)

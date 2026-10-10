@@ -73,6 +73,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
@@ -80,6 +81,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +95,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.core.agent.StepStatus
+import kotlinx.coroutines.launch
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import com.example.core.model.CommandResult
 import com.example.core.model.PrivacyMode
 import com.example.core.voice.VoiceState
@@ -224,6 +229,7 @@ fun TopSafetyHeader(
 @Composable
 fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
     val context = LocalContext.current
+    val conversationHistory by viewModel.conversationHistory.collectAsStateWithLifecycle()
     var textInput by remember { mutableStateOf("") }
     var showMicPermissionRationale by remember { mutableStateOf(false) }
     var showMicPermissionDenied by remember { mutableStateOf(false) }
@@ -279,6 +285,28 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
                     else -> Text("Tap the microphone and speak, or type a command.", color = JarvisTextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp)
                 }
                 uiState.voiceErrorMessage?.let { Text(it, color = JarvisRedAlert, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+            }
+        }
+        if (conversationHistory.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth().height(104.dp),
+                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Text("PERSISTENT CHAT MEMORY · ${conversationHistory.size} recent messages", color = JarvisCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                        items(conversationHistory.take(4).reversed(), key = { it.id }) { message ->
+                            Text(
+                                text = "${if (message.role == "USER") "You" else "Jarvis"}: ${message.content}",
+                                color = if (message.role == "USER") JarvisTextSecondary else JarvisTextPrimary,
+                                fontSize = 10.sp,
+                                maxLines = 2,
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -381,6 +409,14 @@ private fun GeneralSettingsContent(viewModel: MainViewModel, uiState: MainUiStat
         }
         Card(colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(22.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Divider(color = JarvisCardDark)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Include saved memory in Balanced cloud queries", color = JarvisTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Off by default. When enabled, relevant saved memories, notes and chat excerpts may be sent to the selected cloud AI provider with your question. Strict mode remains local-only; Cloud mode uses memory automatically.", color = JarvisTextSecondary, fontSize = 11.sp)
+                    }
+                    Switch(checked = uiState.includeMemoryInCloud, onCheckedChange = { viewModel.setIncludeMemoryInCloud(it) })
+                }
                 Text("Voice", color = JarvisCyan, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Text("Recognition language", color = JarvisTextPrimary)
                 Text("Jarvis uses the language selected by your Android speech-recognition service. Change it in your device's speech input settings.", color = JarvisTextSecondary, fontSize = 13.sp)
@@ -469,6 +505,26 @@ fun PermissionsOverviewTab() {
 
 @Composable
 fun PersonalOsTab(viewModel: MainViewModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var exportStatus by remember { mutableStateOf<String?>(null) }
+    val okfExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val bundle = viewModel.exportOkfBundle()
+                val output = context.contentResolver.openOutputStream(uri) ?: error("Could not open the selected destination")
+                ZipOutputStream(output).use { zip ->
+                    bundle.forEach { (path, content) ->
+                        zip.putNextEntry(ZipEntry(path))
+                        zip.write(content.toByteArray(Charsets.UTF_8))
+                        zip.closeEntry()
+                    }
+                }
+                bundle.size
+            }.onSuccess { exportStatus = "Exported $it OKF files. Keep the ZIP private; it contains your saved memory and chat history." }
+             .onFailure { exportStatus = "OKF export failed: ${it.message ?: "unknown error"}" }
+        }
+    }
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
@@ -481,6 +537,18 @@ fun PersonalOsTab(viewModel: MainViewModel) {
             .fillMaxSize()
             .padding(12.dp)
     ) {
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("LONG-TERM MEMORY & OKF", color = JarvisCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Chat turns are stored locally in Room and retrieved for relevant AI questions. Export a portable Open Knowledge Format v0.2 bundle of memories, notes and conversation history.", color = JarvisTextSecondary, fontSize = 11.sp)
+                    Button(onClick = { okfExportLauncher.launch("Jarvis-Memory-OKF.zip") }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)) {
+                        Text("Export Memory as OKF ZIP", color = JarvisNavyDark, fontWeight = FontWeight.Bold)
+                    }
+                    exportStatus?.let { Text(it, color = JarvisTextSecondary, fontSize = 10.sp) }
+                }
+            }
+        }
         // Section: Tasks
         item {
             Row(

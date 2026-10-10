@@ -36,7 +36,8 @@ class ServiceLocator(val appContext: Context) {
             memoryDao = database.memoryDao(),
             noteDao = database.noteDao(),
             taskDao = database.taskDao(),
-            routineDao = database.routineDao()
+            routineDao = database.routineDao(),
+            conversationDao = database.conversationDao()
         )
     }
 
