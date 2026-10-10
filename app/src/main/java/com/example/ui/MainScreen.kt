@@ -274,26 +274,27 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
             IconButton(onClick = { if (uiState.isEmergencyStopped) viewModel.resetEmergencyStop() else viewModel.triggerEmergencyStop() }, modifier = Modifier.size(48.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("emergency_stop_button")) { Icon(if (uiState.isEmergencyStopped) Icons.Default.Refresh else Icons.Default.Stop, contentDescription = "Emergency stop", tint = if (uiState.isEmergencyStopped) JarvisGreenOk else JarvisRedAlert) }
         }
         Spacer(Modifier.height(12.dp))
-        Box(Modifier.weight(0.72f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Box(Modifier.size(132.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.fillMaxSize().border(2.dp, JarvisCyan.copy(alpha = .20f), CircleShape).padding(18.dp).border(3.dp, JarvisCyan.copy(alpha = .35f), CircleShape).padding(20.dp).border(4.dp, stateColor, CircleShape), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(if (listening) 62.dp else 50.dp).clip(CircleShape).background(stateColor.copy(alpha = .18f)), contentAlignment = Alignment.Center) { Box(Modifier.size(20.dp).clip(CircleShape).background(stateColor)) }
+        Box(Modifier.weight(0.68f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Keep the voice orb compact so it cannot collide with the chat card on short screens.
+                Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().border(1.5.dp, JarvisCyan.copy(alpha = .20f), CircleShape).padding(10.dp).border(2.dp, JarvisCyan.copy(alpha = .35f), CircleShape).padding(10.dp).border(2.5.dp, stateColor, CircleShape), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(if (listening) 42.dp else 34.dp).clip(CircleShape).background(stateColor.copy(alpha = .18f)), contentAlignment = Alignment.Center) { Box(Modifier.size(14.dp).clip(CircleShape).background(stateColor)) }
                     }
                 }
-                Text(uiState.voiceState.name, color = stateColor, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text(voiceStatus.uppercase(), color = stateColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 when {
                     uiState.isProcessing -> Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(18.dp), color = JarvisCyan, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Processing request…", color = JarvisTextSecondary, fontSize = 13.sp) }
-                    uiState.lastCommandResult is CommandResult.Success -> Text((uiState.lastCommandResult as CommandResult.Success).message, color = JarvisCyanLight, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 4)
-                    uiState.lastCommandResult is CommandResult.Error -> Text((uiState.lastCommandResult as CommandResult.Error).message, color = JarvisRedAlert, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 4)
+                    uiState.lastCommandResult is CommandResult.Success -> Text((uiState.lastCommandResult as CommandResult.Success).message, color = JarvisCyanLight, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
+                    uiState.lastCommandResult is CommandResult.Error -> Text((uiState.lastCommandResult as CommandResult.Error).message, color = JarvisRedAlert, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
                     uiState.lastRecognizedSpeech.isNotBlank() -> Text("“${uiState.lastRecognizedSpeech}”", color = JarvisTextPrimary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
                     else -> Text("Tap the microphone and speak, or type a command.", color = JarvisTextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp)
                 }
-                uiState.voiceErrorMessage?.let { Text(it, color = JarvisRedAlert, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                uiState.voiceErrorMessage?.let { Text(it, color = JarvisRedAlert, fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2) }
             }
         }
         Card(
-            modifier = Modifier.fillMaxWidth().weight(1.12f),
+            modifier = Modifier.fillMaxWidth().weight(1.32f),
             colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
             shape = RoundedCornerShape(18.dp)
         ) {
