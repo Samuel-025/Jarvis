@@ -155,7 +155,8 @@ class AcceptanceAuditComprehensiveTest {
             memoryDao = database.memoryDao(),
             noteDao = database.noteDao(),
             taskDao = database.taskDao(),
-            routineDao = database.routineDao()
+            routineDao = database.routineDao(),
+            conversationDao = database.conversationDao()
         )
         auditEventRepository = AuditEventRepository()
         localCommandEngine = LocalCommandEngineImpl(context)
