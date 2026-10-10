@@ -133,6 +133,14 @@ class ByokProviderTestSuite {
         assertNotNull(manager.getProvider(ProviderType.GEMINI))
         assertNotNull(manager.getProvider(ProviderType.OPENAI))
         assertNotNull(manager.getProvider(ProviderType.OPENAI_COMPATIBLE))
+        assertNotNull(manager.getProvider(ProviderType.OPENROUTER))
+        assertNotNull(manager.getProvider(ProviderType.DEEPSEEK))
+        assertNotNull(manager.getProvider(ProviderType.TOGETHER_AI))
+        assertNotNull(manager.getProvider(ProviderType.MISTRAL))
+        assertEquals("https://openrouter.ai/api/v1/", manager.getProvider(ProviderType.OPENROUTER)!!.descriptor.defaultEndpoint)
+        assertEquals("https://api.deepseek.com/", manager.getProvider(ProviderType.DEEPSEEK)!!.descriptor.defaultEndpoint)
+        assertEquals("https://api.together.ai/v1/", manager.getProvider(ProviderType.TOGETHER_AI)!!.descriptor.defaultEndpoint)
+        assertEquals("https://api.mistral.ai/v1/", manager.getProvider(ProviderType.MISTRAL)!!.descriptor.defaultEndpoint)
         assertNotNull(manager.getProvider(ProviderType.LOCAL_OFFLINE))
 
         // Set provider to LOCAL_OFFLINE: should query without any API key

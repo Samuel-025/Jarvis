@@ -43,7 +43,13 @@ class OpenAIProviderAdapter(
                     )
                 )
             ),
-            defaultModelId = "gpt-4o-mini",
+            defaultModelId = when (type) {
+                ProviderType.OPENROUTER -> "openai/gpt-4o-mini"
+                ProviderType.DEEPSEEK -> "deepseek-chat"
+                ProviderType.TOGETHER_AI -> "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+                ProviderType.MISTRAL -> "mistral-small-latest"
+                else -> "gpt-4o-mini"
+            },
             requiresApiKey = true,
             allowsCustomEndpoint = type == ProviderType.OPENAI_COMPATIBLE,
             defaultEndpoint = defaultEndpoint,

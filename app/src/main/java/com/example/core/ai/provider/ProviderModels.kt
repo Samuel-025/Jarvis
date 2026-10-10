@@ -11,6 +11,9 @@ enum class ProviderType(val displayName: String) {
     GEMINI("Google Gemini"),
     OPENAI("OpenAI"),
     OPENROUTER("OpenRouter"),
+    DEEPSEEK("DeepSeek"),
+    TOGETHER_AI("Together AI"),
+    MISTRAL("Mistral AI"),
     OPENAI_COMPATIBLE("Custom OpenAI-Compatible"),
     LOCAL_OFFLINE("Local Heuristics (Offline)")
 }

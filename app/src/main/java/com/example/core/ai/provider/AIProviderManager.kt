@@ -46,6 +46,15 @@ class AIProviderManager(
                 "https://openrouter.ai/api/v1/"
             )
         )
+        val deepSeek = OpenAIProviderAdapter(
+            OpenAIProviderAdapter.defaultDescriptor(ProviderType.DEEPSEEK, "https://api.deepseek.com/")
+        )
+        val togetherAI = OpenAIProviderAdapter(
+            OpenAIProviderAdapter.defaultDescriptor(ProviderType.TOGETHER_AI, "https://api.together.ai/v1/")
+        )
+        val mistral = OpenAIProviderAdapter(
+            OpenAIProviderAdapter.defaultDescriptor(ProviderType.MISTRAL, "https://api.mistral.ai/v1/")
+        )
         val customOpenAI = OpenAIProviderAdapter(
             OpenAIProviderAdapter.defaultDescriptor(
                 ProviderType.OPENAI_COMPATIBLE,
@@ -57,6 +66,9 @@ class AIProviderManager(
         registerProvider(gemini)
         registerProvider(openAI)
         registerProvider(openRouter)
+        registerProvider(deepSeek)
+        registerProvider(togetherAI)
+        registerProvider(mistral)
         registerProvider(customOpenAI)
         registerProvider(local)
 
@@ -73,7 +85,22 @@ class AIProviderManager(
         initConfigs[ProviderType.OPENROUTER] = ProviderConfiguration(
             type = ProviderType.OPENROUTER,
             selectedModelId = openRouter.descriptor.defaultModelId,
-            customEndpoint = null
+            customEndpoint = openRouter.descriptor.defaultEndpoint
+        )
+        initConfigs[ProviderType.DEEPSEEK] = ProviderConfiguration(
+            type = ProviderType.DEEPSEEK,
+            selectedModelId = "deepseek-chat",
+            customEndpoint = deepSeek.descriptor.defaultEndpoint
+        )
+        initConfigs[ProviderType.TOGETHER_AI] = ProviderConfiguration(
+            type = ProviderType.TOGETHER_AI,
+            selectedModelId = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            customEndpoint = togetherAI.descriptor.defaultEndpoint
+        )
+        initConfigs[ProviderType.MISTRAL] = ProviderConfiguration(
+            type = ProviderType.MISTRAL,
+            selectedModelId = "mistral-small-latest",
+            customEndpoint = mistral.descriptor.defaultEndpoint
         )
         initConfigs[ProviderType.OPENAI_COMPATIBLE] = ProviderConfiguration(
             type = ProviderType.OPENAI_COMPATIBLE,
@@ -240,15 +267,15 @@ class AIProviderManager(
     suspend fun autoDetectProvider(rawApiKey: String, customEndpoint: String? = null): ProviderType? {
         if (rawApiKey.isBlank()) return null
         val candidates = if (rawApiKey.trim().startsWith("sk-or-", ignoreCase = true)) {
-            listOf(ProviderType.OPENROUTER, ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENAI_COMPATIBLE)
+            listOf(ProviderType.OPENROUTER, ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.DEEPSEEK, ProviderType.TOGETHER_AI, ProviderType.MISTRAL, ProviderType.OPENAI_COMPATIBLE)
         } else {
-            listOf(ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENROUTER, ProviderType.OPENAI_COMPATIBLE)
+            listOf(ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENROUTER, ProviderType.DEEPSEEK, ProviderType.TOGETHER_AI, ProviderType.MISTRAL, ProviderType.OPENAI_COMPATIBLE)
         }
         for (type in candidates) {
             val provider = getProvider(type) ?: continue
             val current = _configurations.value[type]
                 ?: ProviderConfiguration(type, provider.descriptor.defaultModelId)
-            val config = if (type == ProviderType.OPENAI_COMPATIBLE && !customEndpoint.isNullOrBlank()) {
+            val config = if (type != ProviderType.GEMINI && type != ProviderType.LOCAL_OFFLINE && !customEndpoint.isNullOrBlank()) {
                 current.copy(customEndpoint = customEndpoint)
             } else current
             updateStatus(type, ProviderConnectionStatus(type, ConnectionState.CHECKING, "Checking whether this key works with ${type.displayName}..."))
