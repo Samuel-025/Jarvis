@@ -77,6 +77,18 @@ class MemoryRagOkfTest {
         assertTrue(malformed.errors.any { it.contains("frontmatter") })
     }
 
+    @Test fun okfExportImportRoundTripPreservesMemoryAndNoteContent() {
+        val exported = OkfMemoryCodec.exportBundle(
+            memories = listOf(MemoryEntity(id = 12, key = "Study goal", value = "Finish Python roadmap", category = "learning", timestamp = 100)),
+            notes = listOf(NoteEntity(id = 9, title = "Project note", content = "Use local-first memory", timestamp = 101)),
+            messages = emptyList()
+        )
+        val imported = OkfMemoryCodec.parseImportBundle(exported)
+        assertEquals(2, imported.items.size)
+        assertTrue(imported.items.any { it.title == "Study goal" && it.body == "Finish Python roadmap" })
+        assertTrue(imported.items.any { it.title == "Project note" && it.body == "Use local-first memory" })
+    }
+
     @Test fun okfYamlEscapesQuotesInUserSuppliedTitles() {
         val bundle = OkfMemoryCodec.exportBundle(
             memories = listOf(MemoryEntity(id = 1, key = "Suyash's preference", value = "Don't forget", timestamp = 1)),

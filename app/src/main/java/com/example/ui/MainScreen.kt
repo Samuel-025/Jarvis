@@ -623,6 +623,9 @@ fun PersonalOsTab(viewModel: MainViewModel) {
 
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var showAddTaskDialog by remember { mutableStateOf(false) }
+    var editingMemory by remember { mutableStateOf<com.example.core.memory.MemoryEntity?>(null) }
+    var editingNote by remember { mutableStateOf<com.example.core.memory.NoteEntity?>(null) }
+    var showRetentionDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -633,6 +636,10 @@ fun PersonalOsTab(viewModel: MainViewModel) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("LONG-TERM MEMORY & OKF", color = JarvisCyan, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("Review or edit saved facts and notes below. Retention controls let you clear selected local records; export a private backup first if needed.", color = JarvisTextSecondary, fontSize = 11.sp)
+                OutlinedButton(onClick = { showRetentionDialog = true }) {
+                    Text("Memory & History Retention", color = JarvisRedAlert, fontWeight = FontWeight.SemiBold)
+                }
                     Text("Chat turns are stored locally in Room and retrieved for relevant AI questions. Export a portable Open Knowledge Format v0.2 bundle of memories, notes and conversation history.", color = JarvisTextSecondary, fontSize = 11.sp)
                     Button(onClick = { okfExportLauncher.launch("Jarvis-Memory-OKF.zip") }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)) {
                         Text("Export Memory as OKF ZIP", color = JarvisNavyDark, fontWeight = FontWeight.Bold)
@@ -752,6 +759,7 @@ fun PersonalOsTab(viewModel: MainViewModel) {
                             Text(text = note.title, fontWeight = FontWeight.Bold, color = JarvisTextPrimary, fontSize = 13.sp)
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(text = note.content, color = JarvisTextSecondary, fontSize = 12.sp)
+                            TextButton(onClick = { editingNote = note }) { Text("Edit note", color = JarvisGold, fontSize = 11.sp) }
                         }
                         IconButton(onClick = { viewModel.deleteNote(note.id) }) {
                             Icon(Icons.Default.Close, contentDescription = "Delete", tint = JarvisRedAlert, modifier = Modifier.size(16.dp))
@@ -801,6 +809,7 @@ fun PersonalOsTab(viewModel: MainViewModel) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = mem.key, fontWeight = FontWeight.SemiBold, color = JarvisCyanLight, fontSize = 12.sp)
                             Text(text = mem.value, color = JarvisTextPrimary, fontSize = 12.sp)
+                            TextButton(onClick = { editingMemory = mem }) { Text("Edit memory", color = JarvisCyanLight, fontSize = 11.sp) }
                         }
                         IconButton(onClick = { viewModel.deleteMemory(mem.id) }) {
                             Icon(Icons.Default.Close, contentDescription = "Delete", tint = JarvisRedAlert, modifier = Modifier.size(16.dp))
@@ -809,6 +818,63 @@ fun PersonalOsTab(viewModel: MainViewModel) {
                 }
             }
         }
+    }
+
+    if (editingMemory != null) {
+        val current = editingMemory!!
+        var key by remember(current.id) { mutableStateOf(current.key) }
+        var value by remember(current.id) { mutableStateOf(current.value) }
+        AlertDialog(
+            onDismissRequest = { editingMemory = null },
+            title = { Text("Edit saved memory", color = JarvisCyan) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = key, onValueChange = { key = it }, label = { Text("Memory title") }, singleLine = true)
+                OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text("Memory value") }, minLines = 3)
+            } },
+            confirmButton = { Button(onClick = {
+                if (key.isNotBlank() && value.isNotBlank()) viewModel.updateMemory(current.copy(key = key, value = value))
+                editingMemory = null
+            }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { editingMemory = null }) { Text("Cancel") } },
+            containerColor = JarvisSurfaceDark
+        )
+    }
+
+    if (editingNote != null) {
+        val current = editingNote!!
+        var title by remember(current.id) { mutableStateOf(current.title) }
+        var content by remember(current.id) { mutableStateOf(current.content) }
+        AlertDialog(
+            onDismissRequest = { editingNote = null },
+            title = { Text("Edit note", color = JarvisGold) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Note title") }, singleLine = true)
+                OutlinedTextField(value = content, onValueChange = { content = it }, label = { Text("Note content") }, minLines = 3)
+            } },
+            confirmButton = { Button(onClick = {
+                if (title.isNotBlank() && content.isNotBlank()) viewModel.updateNote(current.copy(title = title, content = content))
+                editingNote = null
+            }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { editingNote = null }) { Text("Cancel") } },
+            containerColor = JarvisSurfaceDark
+        )
+    }
+
+    if (showRetentionDialog) {
+        AlertDialog(
+            onDismissRequest = { showRetentionDialog = false },
+            title = { Text("Memory & history retention", color = JarvisRedAlert) },
+            text = { Text("Choose what to delete from this device. This cannot be undone. Export an OKF backup first if you may need these records. API keys and provider settings are not affected.", color = JarvisTextSecondary) },
+            confirmButton = { TextButton(onClick = {
+                viewModel.clearAllMemories()
+                viewModel.clearAllNotes()
+                viewModel.clearConversationHistory()
+                showRetentionDialog = false
+                exportStatus = "Cleared saved memories, notes, and conversation history from this device."
+            }) { Text("Clear memories, notes & chat", color = JarvisRedAlert) } },
+            dismissButton = { TextButton(onClick = { showRetentionDialog = false }) { Text("Cancel") } },
+            containerColor = JarvisSurfaceDark
+        )
     }
 
     // Add Task Dialog

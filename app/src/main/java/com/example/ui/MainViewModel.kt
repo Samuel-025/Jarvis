@@ -322,10 +322,22 @@ class MainViewModel(
         }
     }
 
+    fun updateNote(note: NoteEntity) {
+        viewModelScope.launch { serviceLocator.personalOsRepository.updateNote(note) }
+    }
+
     fun deleteNote(id: Long) {
         viewModelScope.launch {
             serviceLocator.personalOsRepository.deleteNote(id)
         }
+    }
+
+    fun clearAllNotes() {
+        viewModelScope.launch { serviceLocator.personalOsRepository.clearNotes() }
+    }
+
+    fun clearConversationHistory() {
+        viewModelScope.launch { serviceLocator.personalOsRepository.clearConversation() }
     }
 
     fun addTask(title: String, category: String) {
@@ -350,6 +362,10 @@ class MainViewModel(
         viewModelScope.launch {
             serviceLocator.personalOsRepository.saveMemory(key, value)
         }
+    }
+
+    fun updateMemory(memory: MemoryEntity) {
+        viewModelScope.launch { serviceLocator.personalOsRepository.updateMemory(memory) }
     }
 
     fun deleteMemory(id: Long) {
