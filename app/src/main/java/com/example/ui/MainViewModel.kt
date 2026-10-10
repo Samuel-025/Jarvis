@@ -226,6 +226,7 @@ class MainViewModel(
     fun startVoiceListening() {
         if (EmergencyStop.isActive()) return
         speechGeneration++
+        val generation = speechGeneration
         serviceLocator.textToSpeechAdapter.stop()
         _uiState.value = _uiState.value.copy(
             voiceState = VoiceState.LISTENING,
@@ -236,6 +237,7 @@ class MainViewModel(
 
         serviceLocator.speechRecognizerAdapter.startListening(
             onResult = { text ->
+                if (generation != speechGeneration || EmergencyStop.isActive()) return@startListening
                 _uiState.value = _uiState.value.copy(
                     voiceState = VoiceState.PROCESSING,
                     lastRecognizedSpeech = text,
@@ -245,6 +247,7 @@ class MainViewModel(
                 executeIntent(IntentClassifier.classify(text), source = "USER_VOICE")
             },
             onError = { code, msg ->
+                if (generation != speechGeneration) return@startListening
                 val recoverableNoSpeech = code == SpeechRecognizer.ERROR_NO_MATCH ||
                     code == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                 _uiState.value = _uiState.value.copy(
@@ -258,6 +261,8 @@ class MainViewModel(
     }
 
     fun stopVoiceListening() {
+        // Ignore any late recognition callback after the user stops the current session.
+        speechGeneration++
         serviceLocator.speechRecognizerAdapter.stopListening()
         if (_uiState.value.voiceState == VoiceState.LISTENING) {
             _uiState.value = _uiState.value.copy(voiceState = VoiceState.IDLE)
