@@ -39,6 +39,12 @@ class PhoneAutomationRegistry(
             riskLevel = RiskLevel.LOW
         ),
         PhoneActionDescriptor(
+            id = "schedule_reminder",
+            title = "Schedule Reminder",
+            description = "Schedules a local notification reminder",
+            riskLevel = RiskLevel.LOW
+        ),
+        PhoneActionDescriptor(
             id = "open_web_url",
             title = "Open Web URL",
             description = "Opens a verified web URL in default browser",
@@ -81,6 +87,15 @@ class PhoneAutomationRegistry(
                         CommandResult.Success("Set timer for $seconds seconds", audioFeedback = "Timer set for $seconds seconds.")
                     } else {
                         CommandResult.Error("Clock application not available to set timer", ErrorType.APP_NOT_FOUND)
+                    }
+                }
+                "schedule_reminder" -> {
+                    val delayMillis = params["delayMillis"]?.toLongOrNull() ?: 0L
+                    val message = params["message"]?.trim().orEmpty()
+                    if (message.isBlank() || !ReminderScheduler.schedule(context, delayMillis, message)) {
+                        CommandResult.Error("Reminder needs a message and a delay between 1 second and 30 days.", ErrorType.INVALID_INPUT)
+                    } else {
+                        CommandResult.Success("Reminder scheduled: $message", audioFeedback = "Reminder scheduled.")
                     }
                 }
                 "open_web_url" -> {

@@ -73,6 +73,24 @@ object IntentClassifier {
             }
         }
 
+        // Local notification reminders are scheduled on-device; they do not require a cloud provider.
+        val reminderMatch = Regex("(?i)^(?:remind me|set reminder|reminder)\\s+in\\s+(\\d+)\\s+(seconds?|minutes?|hours?|days?)\\s+(?:to|for|that)\\s+(.+)$").find(rawInput.trim())
+        if (reminderMatch != null) {
+            val amount = reminderMatch.groupValues[1].toLongOrNull()
+            val unit = reminderMatch.groupValues[2].lowercase()
+            val multiplier = when {
+                unit.startsWith("day") -> 86_400_000L
+                unit.startsWith("hour") -> 3_600_000L
+                unit.startsWith("minute") -> 60_000L
+                else -> 1_000L
+            }
+            val delayMillis = amount?.times(multiplier)
+            val message = reminderMatch.groupValues[3].trim()
+            if (delayMillis != null && delayMillis in 1L..(30L * 24L * 60L * 60L * 1000L) && message.isNotBlank()) {
+                return JarvisIntent.PhoneAction("schedule_reminder", mapOf("delayMillis" to delayMillis.toString(), "message" to message))
+            }
+        }
+
         // Timers are handed to the user's Clock app; reminders/scheduled background routines
         // are not claimed as implemented until a notification-backed scheduler exists.
         val timerMatch = Regex("(?i)^(?:set )?timer for (\\d+)\\s+(seconds?|minutes?|hours?)(?:\\s+(?:called|named|for)\\s+(.+))?$").find(rawInput.trim())

@@ -152,3 +152,22 @@ class JarvisCoreUnitTest {
         assertTrue((youtube as JarvisIntent.PhoneAction).params["url"].orEmpty().startsWith("https://www.youtube.com/results?search_query="))
     }
 }
+
+
+class ReminderCommandRegressionTest {
+    @org.junit.Test
+    fun reminderCommandCreatesLocalReminderIntent() {
+        val result = com.example.core.nlp.IntentClassifier.classify("Remind me in 10 minutes to drink water")
+        org.junit.Assert.assertTrue(result is com.example.core.model.JarvisIntent.PhoneAction)
+        result as com.example.core.model.JarvisIntent.PhoneAction
+        org.junit.Assert.assertEquals("schedule_reminder", result.actionType)
+        org.junit.Assert.assertEquals("600000", result.params["delayMillis"])
+        org.junit.Assert.assertEquals("drink water", result.params["message"])
+    }
+
+    @org.junit.Test
+    fun malformedOrOverlongReminderIsNotScheduled() {
+        val result = com.example.core.nlp.IntentClassifier.classify("remind me in 999999 days to do something")
+        org.junit.Assert.assertFalse(result is com.example.core.model.JarvisIntent.PhoneAction && result.actionType == "schedule_reminder")
+    }
+}

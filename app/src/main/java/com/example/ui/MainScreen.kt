@@ -499,10 +499,12 @@ fun PermissionsOverviewTab() {
 
     val microphoneLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refreshToken++ }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refreshToken++ }
+    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refreshToken++ }
     val permissions = listOf(
         Triple("Internet", "Normal install-time permission used by cloud AI providers when enabled.", "internet"),
         Triple("Network state", "Normal install-time permission used to detect connectivity.", "network"),
         Triple("Vibration", "Normal permission for haptic feedback.", Manifest.permission.VIBRATE),
+        Triple("Notifications", "Optional. Needed on Android 13+ to show scheduled Jarvis reminders.", Manifest.permission.POST_NOTIFICATIONS),
         Triple("Microphone", "Optional. Requested only when you choose voice input. Text commands work without it.", Manifest.permission.RECORD_AUDIO),
         Triple("Flashlight control", "Optional CAMERA permission is needed only when Jarvis controls the phone torch. Vision uses Android's camera preview flow separately and asks before cloud image analysis.", Manifest.permission.CAMERA)
     )
@@ -518,11 +520,12 @@ fun PermissionsOverviewTab() {
                         Manifest.permission.VIBRATE -> if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) "Available" else "Unavailable"
                         else -> if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) "Granted" else "Not granted"
                     }
-                    val canRequest = permission == Manifest.permission.RECORD_AUDIO || permission == Manifest.permission.CAMERA
+                    val canRequest = permission == Manifest.permission.RECORD_AUDIO || permission == Manifest.permission.CAMERA || permission == Manifest.permission.POST_NOTIFICATIONS
                     val actionModifier = if (canRequest && status == "Not granted") Modifier.clickable {
                         when (permission) {
                             Manifest.permission.RECORD_AUDIO -> microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             Manifest.permission.CAMERA -> cameraLauncher.launch(Manifest.permission.CAMERA)
+                            Manifest.permission.POST_NOTIFICATIONS -> notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else -> Unit
                         }
                     } else Modifier
@@ -544,7 +547,7 @@ fun PermissionsOverviewTab() {
                     }
                 }
                 item {
-                    Text("This build does not currently declare an Accessibility service, notification listener, or floating overlay. Those special-access settings are therefore not requested or shown as enabled.", color = JarvisTextSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp))
+                    Text("Jarvis now supports local scheduled reminders. Grant Notifications above so Android can display reminder alerts. Accessibility, notification reading, floating overlay, and continuous background listening remain opt-in capabilities and are not silently enabled.", color = JarvisTextSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp))
                 }
             }
         }
