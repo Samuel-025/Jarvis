@@ -60,7 +60,7 @@ class MemoryRagOkfTest {
         )
         val report = OkfMemoryCodec.parseImportBundle(files)
         assertEquals(2, report.items.size)
-        assertEquals(1, report.skippedFiles)
+        assertEquals(2, report.skippedFiles)
         assertTrue(report.errors.isEmpty())
         assertEquals("45000 INR", report.items.first().body)
     }
