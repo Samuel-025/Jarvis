@@ -64,20 +64,26 @@ class OpenAIProviderAdapter(
         }
 
         internal fun parseModelsResponse(body: String): List<ModelDescriptor> {
-            val root = org.json.JSONTokener(body).nextValue()
-            val data = when (root) {
-                is JSONArray -> root
-                is JSONObject -> root.optJSONArray("data")
-                    ?: root.optJSONArray("models")
-                    ?: root.optJSONArray("items")
-                else -> null
-            } ?: throw IOException("The endpoint did not return a recognized model list (expected data, models, items, or a JSON array).")
+            // Moshi is available in local JVM tests; Android's org.json stubs throw
+            // "Method ... not mocked" when this pure parser is exercised by Gradle tests.
+            val root = try {
+                com.squareup.moshi.Moshi.Builder().build()
+                    .adapter(Any::class.java).fromJson(body)
+            } catch (e: Exception) {
+                throw IOException("The endpoint returned invalid JSON for model discovery.", e)
+            }
+            val data: List<*> = when (root) {
+                is List<*> -> root
+                is Map<*, *> -> (root["data"] ?: root["models"] ?: root["items"]) as? List<*>
+                    ?: throw IOException("The endpoint did not return a recognized model list (expected data, models, items, or a JSON array).")
+                else -> throw IOException("The endpoint did not return a recognized model list (expected data, models, items, or a JSON array).")
+            }
 
             return buildList {
-                for (index in 0 until data.length()) {
-                    val item = data.optJSONObject(index) ?: continue
+                for (entry in data) {
+                    val item = entry as? Map<*, *> ?: continue
                     val id = sequenceOf("id", "model", "name")
-                        .map { item.optString(it, "").trim() }
+                        .mapNotNull { key -> (item[key] as? String)?.trim() }
                         .firstOrNull { it.isNotBlank() && it != "null" }
                         ?: continue
                     val lower = id.lowercase()
@@ -91,7 +97,7 @@ class OpenAIProviderAdapter(
                         }
                         add(ProviderCapability.STREAMING)
                     }
-                    val displayName = item.optString("name", id).takeIf { it.isNotBlank() } ?: id
+                    val displayName = (item["name"] as? String)?.takeIf { it.isNotBlank() } ?: id
                     add(ModelDescriptor(id = id, displayName = displayName, capabilities = capabilities))
                 }
             }.distinctBy { it.id }.sortedBy { it.id }
