@@ -5,6 +5,8 @@ import com.example.core.memory.MemoryEntity
 import com.example.core.memory.NoteEntity
 import com.example.core.memory.OkfMemoryCodec
 import com.example.core.memory.RagContextBuilder
+import com.example.core.model.PrivacyMode
+import com.example.core.model.PrivacyRoutingPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
