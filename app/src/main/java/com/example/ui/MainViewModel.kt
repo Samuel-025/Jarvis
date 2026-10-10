@@ -358,6 +358,9 @@ class MainViewModel(
 
     suspend fun exportOkfBundle(): Map<String, String> = serviceLocator.personalOsRepository.exportOkfBundle()
 
+    suspend fun importOkfBundle(files: Map<String, String>): com.example.core.memory.PersonalOsRepository.OkfImportSummary =
+        serviceLocator.personalOsRepository.importOkfBundle(files)
+
     val aiProviderManager = serviceLocator.aiProviderManager
 
     val selectedProviderType: StateFlow<com.example.core.ai.provider.ProviderType> =

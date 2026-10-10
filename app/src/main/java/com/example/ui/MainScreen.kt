@@ -98,6 +98,7 @@ import com.example.core.agent.StepStatus
 import kotlinx.coroutines.launch
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import java.util.zip.ZipInputStream
 import com.example.core.model.CommandResult
 import com.example.core.model.PrivacyMode
 import com.example.core.voice.VoiceState
@@ -564,6 +565,50 @@ fun PersonalOsTab(viewModel: MainViewModel) {
              .onFailure { exportStatus = "OKF export failed: ${it.message ?: "unknown error"}" }
         }
     }
+    val okfImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val files = linkedMapOf<String, String>()
+                var totalBytes = 0
+                var entryCount = 0
+                val input = context.contentResolver.openInputStream(uri) ?: error("Could not open the selected ZIP")
+                ZipInputStream(input).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        entryCount++
+                        if (entryCount > 500) error("ZIP contains too many entries (limit 500)")
+                        if (!entry.isDirectory) {
+                            val name = entry.name.replace('\\\\', '/')
+                            if (name.startsWith("/") || name.split('/').any { it == ".." } || name.length > 240) {
+                                error("ZIP contains an unsafe file path")
+                            }
+                            val bytes = java.io.ByteArrayOutputStream()
+                            val buffer = ByteArray(4096)
+                            var entryBytes = 0
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                entryBytes += count
+                                totalBytes += count
+                                if (entryBytes > 100_000) error("File exceeds 100 KB: $name")
+                                if (totalBytes > 5_000_000) error("ZIP exceeds 5 MB uncompressed limit")
+                                bytes.write(buffer, 0, count)
+                            }
+                            if (name.endsWith(".md", ignoreCase = true)) {
+                                val content = bytes.toByteArray().toString(Charsets.UTF_8)
+                                if (files.put(name, content) != null) error("ZIP contains duplicate path: $name")
+                            }
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+                viewModel.importOkfBundle(files)
+            }.onSuccess { summary ->
+                exportStatus = "Import finished: ${summary.importedMemories} memories and ${summary.importedNotes} notes added; ${summary.skippedFiles} other files skipped; ${summary.errors.size} validation errors. Existing entries were preserved."
+            }.onFailure { exportStatus = "OKF import failed: ${it.message ?: "unknown error"}" }
+        }
+    }
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
@@ -584,6 +629,10 @@ fun PersonalOsTab(viewModel: MainViewModel) {
                     Button(onClick = { okfExportLauncher.launch("Jarvis-Memory-OKF.zip") }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)) {
                         Text("Export Memory as OKF ZIP", color = JarvisNavyDark, fontWeight = FontWeight.Bold)
                     }
+                    OutlinedButton(onClick = { okfImportLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }) {
+                        Text("Import OKF ZIP", color = JarvisCyanLight, fontWeight = FontWeight.Bold)
+                    }
+                    Text("Imports only validated memory and note files from OKF v0.2. Conversation logs are never imported as trusted memory. Existing data is not overwritten.", color = JarvisTextSecondary, fontSize = 10.sp)
                     exportStatus?.let { Text(it, color = JarvisTextSecondary, fontSize = 10.sp) }
                 }
             }
