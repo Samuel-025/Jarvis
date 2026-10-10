@@ -248,6 +248,8 @@ class MainViewModel(
     // Voice lifecycle
     fun startVoiceListening() {
         if (EmergencyStop.isActive()) return
+        // Prevent overlapping starts even if another UI/caller bypasses the tap debounce.
+        if (_uiState.value.voiceState == VoiceState.LISTENING) return
         speechGeneration++
         val generation = speechGeneration
         serviceLocator.textToSpeechAdapter.stop()

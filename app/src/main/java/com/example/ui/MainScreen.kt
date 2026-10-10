@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.verticalScroll
@@ -79,6 +80,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -232,6 +234,8 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
     val context = LocalContext.current
     val conversationHistory by viewModel.conversationHistory.collectAsStateWithLifecycle()
     var textInput by remember { mutableStateOf("") }
+    // Debounce rapid taps while Android starts/stops SpeechRecognizer.
+    var lastMicTapAt by remember { mutableLongStateOf(0L) }
     var showMicPermissionRationale by remember { mutableStateOf(false) }
     var showMicPermissionDenied by remember { mutableStateOf(false) }
     val microphonePermissionLauncher = rememberLauncherForActivityResult(
@@ -353,12 +357,16 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
             OutlinedTextField(value = textInput, onValueChange = { textInput = it }, placeholder = { Text("Tap the microphone and speak, or type a command.", color = JarvisTextSecondary, fontSize = 13.sp) }, modifier = Modifier.weight(1f).testTag("command_input_field"), shape = RoundedCornerShape(14.dp), maxLines = 3)
             IconButton(
                 onClick = {
-                    if (listening) {
-                        viewModel.stopVoiceListening()
-                    } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                        viewModel.startVoiceListening()
-                    } else {
-                        showMicPermissionRationale = true
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastMicTapAt >= 600L) {
+                        lastMicTapAt = now
+                        if (listening) {
+                            viewModel.stopVoiceListening()
+                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            viewModel.startVoiceListening()
+                        } else {
+                            showMicPermissionRationale = true
+                        }
                     }
                 },
                 modifier = Modifier.size(54.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("voice_mic_fab")
