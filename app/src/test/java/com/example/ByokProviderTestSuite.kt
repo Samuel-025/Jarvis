@@ -117,6 +117,34 @@ class ByokProviderTestSuite {
     }
 
     @Test
+    fun testModelDiscoveryParsesCommonProviderResponseShapes() {
+        val cases = listOf(
+            """{"data":[{"id":"model-a"},{"id":"model-b","name":"Friendly B"}]}""" to listOf("model-a", "model-b"),
+            """{"models":[{"model":"deepseek-chat"},{"name":"mistral-small-latest"}]}""" to listOf("deepseek-chat", "mistral-small-latest"),
+            """{"items":[{"id":"model-c"}]}""" to listOf("model-c"),
+            """[{"id":"model-d"}]""" to listOf("model-d")
+        )
+        cases.forEach { (json, expectedIds) ->
+            assertEquals(expectedIds, OpenAIProviderAdapter.parseModelsResponse(json).map { it.id })
+        }
+    }
+
+    @Test
+    fun testEndpointNormalizationHandlesPastedPathsAndQueryStrings() {
+        assertEquals("https://api.example.com/v1/", OpenAIProviderAdapter.normalizeBaseUrl("https://api.example.com/v1"))
+        assertEquals("https://api.example.com/v1/", OpenAIProviderAdapter.normalizeBaseUrl("https://api.example.com/v1/models"))
+        assertEquals("https://api.example.com/v1/", OpenAIProviderAdapter.normalizeBaseUrl("https://api.example.com/v1/chat/completions?x=1"))
+    }
+
+    @Test
+    fun testProviderSpecificFallbackModels() {
+        assertEquals("deepseek-chat", OpenAIProviderAdapter.defaultModelFor(ProviderType.DEEPSEEK))
+        assertEquals("mistral-small-latest", OpenAIProviderAdapter.defaultModelFor(ProviderType.MISTRAL))
+        assertEquals("meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", OpenAIProviderAdapter.defaultModelFor(ProviderType.TOGETHER_AI))
+        assertEquals("openai/gpt-4o-mini", OpenAIProviderAdapter.defaultModelFor(ProviderType.OPENROUTER))
+    }
+
+    @Test
     fun testProviderCapabilitiesValidation() {
         val openAI = OpenAIProviderAdapter()
         assertTrue(openAI.supportsCapability(ProviderCapability.TEXT_GENERATION, "gpt-4o-mini"))

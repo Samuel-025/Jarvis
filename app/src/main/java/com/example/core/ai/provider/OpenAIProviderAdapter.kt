@@ -18,45 +18,98 @@ class OpenAIProviderAdapter(
 ) : AIProvider {
 
     companion object {
+        internal fun defaultModelFor(type: ProviderType): String = when (type) {
+            ProviderType.OPENROUTER -> "openai/gpt-4o-mini"
+            ProviderType.DEEPSEEK -> "deepseek-chat"
+            ProviderType.TOGETHER_AI -> "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+            ProviderType.MISTRAL -> "mistral-small-latest"
+            else -> "gpt-4o-mini"
+        }
+
+        private fun defaultModelsFor(type: ProviderType): List<ModelDescriptor> {
+            val id = defaultModelFor(type)
+            val label = when (type) {
+                ProviderType.OPENROUTER -> "OpenRouter default"
+                ProviderType.DEEPSEEK -> "DeepSeek default"
+                ProviderType.TOGETHER_AI -> "Together AI default"
+                ProviderType.MISTRAL -> "Mistral default"
+                ProviderType.OPENAI_COMPATIBLE -> "Configured provider default"
+                else -> "GPT-4o mini (Fast & Vision)"
+            }
+            val capabilities = buildSet {
+                add(ProviderCapability.TEXT_GENERATION)
+                add(ProviderCapability.STREAMING)
+                if (type == ProviderType.OPENAI || type == ProviderType.OPENROUTER) {
+                    add(ProviderCapability.IMAGE_UNDERSTANDING)
+                    add(ProviderCapability.STRUCTURED_OUTPUT)
+                }
+            }
+            return listOf(ModelDescriptor(id = id, displayName = label, capabilities = capabilities))
+        }
+
+        internal fun normalizeBaseUrl(rawEndpoint: String): String {
+            var endpoint = rawEndpoint.trim().substringBefore('?').substringBefore('#').trimEnd('/')
+            val suffixes = listOf("/chat/completions", "/completions", "/models")
+            for (suffix in suffixes) {
+                if (endpoint.endsWith(suffix, ignoreCase = true)) {
+                    endpoint = endpoint.dropLast(suffix.length).trimEnd('/')
+                    break
+                }
+            }
+            require(endpoint.startsWith("https://", ignoreCase = true) ||
+                endpoint.startsWith("http://", ignoreCase = true)) {
+                "Endpoint must start with http:// or https://."
+            }
+            return endpoint + "/"
+        }
+
+        internal fun parseModelsResponse(body: String): List<ModelDescriptor> {
+            val root = org.json.JSONTokener(body).nextValue()
+            val data = when (root) {
+                is JSONArray -> root
+                is JSONObject -> root.optJSONArray("data")
+                    ?: root.optJSONArray("models")
+                    ?: root.optJSONArray("items")
+                else -> null
+            } ?: throw IOException("The endpoint did not return a recognized model list (expected data, models, items, or a JSON array).")
+
+            return buildList {
+                for (index in 0 until data.length()) {
+                    val item = data.optJSONObject(index) ?: continue
+                    val id = sequenceOf("id", "model", "name")
+                        .map { item.optString(it, "").trim() }
+                        .firstOrNull { it.isNotBlank() && it != "null" }
+                        ?: continue
+                    val lower = id.lowercase()
+                    val capabilities = buildSet {
+                        add(ProviderCapability.TEXT_GENERATION)
+                        if (listOf("vision", "4o", "llava", "pixtral", "gemini", "claude-3", "gpt-4.1").any(lower::contains)) {
+                            add(ProviderCapability.IMAGE_UNDERSTANDING)
+                        }
+                        if (listOf("gpt", "gemini", "claude").any(lower::contains)) {
+                            add(ProviderCapability.STRUCTURED_OUTPUT)
+                        }
+                        add(ProviderCapability.STREAMING)
+                    }
+                    val displayName = item.optString("name", id).takeIf { it.isNotBlank() } ?: id
+                    add(ModelDescriptor(id = id, displayName = displayName, capabilities = capabilities))
+                }
+            }.distinctBy { it.id }.sortedBy { it.id }
+        }
+
         fun defaultDescriptor(
             type: ProviderType = ProviderType.OPENAI,
             defaultEndpoint: String = "https://api.openai.com/v1/"
         ) = ProviderDescriptor(
             type = type,
-            supportedModels = listOf(
-                ModelDescriptor(
-                    id = "gpt-4o-mini",
-                    displayName = "GPT-4o mini (Fast & Vision)",
-                    capabilities = setOf(
-                        ProviderCapability.TEXT_GENERATION,
-                        ProviderCapability.IMAGE_UNDERSTANDING,
-                        ProviderCapability.STRUCTURED_OUTPUT
-                    )
-                ),
-                ModelDescriptor(
-                    id = "gpt-4o",
-                    displayName = "GPT-4o (High Intelligence)",
-                    capabilities = setOf(
-                        ProviderCapability.TEXT_GENERATION,
-                        ProviderCapability.IMAGE_UNDERSTANDING,
-                        ProviderCapability.STRUCTURED_OUTPUT
-                    )
-                )
-            ),
-            defaultModelId = when (type) {
-                ProviderType.OPENROUTER -> "openai/gpt-4o-mini"
-                ProviderType.DEEPSEEK -> "deepseek-chat"
-                ProviderType.TOGETHER_AI -> "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
-                ProviderType.MISTRAL -> "mistral-small-latest"
-                else -> "gpt-4o-mini"
-            },
+            supportedModels = defaultModelsFor(type),
+            defaultModelId = defaultModelFor(type),
             requiresApiKey = true,
             allowsCustomEndpoint = type == ProviderType.OPENAI_COMPATIBLE,
             defaultEndpoint = defaultEndpoint,
             apiKeyInstructionUrl = "https://platform.openai.com/api-keys"
         )
     }
-
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -80,9 +133,7 @@ class OpenAIProviderAdapter(
         apiKey: String?
     ): List<ModelDescriptor> = withContext(Dispatchers.IO) {
         require(!apiKey.isNullOrBlank()) { "Enter an API key first." }
-        val baseUrl = (config.customEndpoint?.takeIf { it.isNotBlank() } ?: descriptor.defaultEndpoint).let {
-            if (it.endsWith("/")) it else "$it/"
-        }
+        val baseUrl = normalizeBaseUrl(config.customEndpoint?.takeIf { it.isNotBlank() } ?: descriptor.defaultEndpoint)
         val request = Request.Builder()
             .url("${baseUrl}models")
             .header("Authorization", "Bearer $apiKey")
@@ -93,27 +144,9 @@ class OpenAIProviderAdapter(
             if (!response.isSuccessful) {
                 throw IOException("Model discovery failed (HTTP ${response.code}): ${parseErrorMessage(body)}")
             }
-            val data = JSONObject(body).optJSONArray("data")
-                ?: throw IOException("The endpoint did not return an OpenAI-compatible models list.")
-            buildList {
-                for (index in 0 until data.length()) {
-                    val item = data.optJSONObject(index) ?: continue
-                    val id = item.optString("id").trim()
-                    if (id.isBlank()) continue
-                    val lower = id.lowercase()
-                    val capabilities = buildSet {
-                        add(ProviderCapability.TEXT_GENERATION)
-                        if (listOf("vision", "4o", "llava", "pixtral", "gemini", "claude-3").any(lower::contains)) {
-                            add(ProviderCapability.IMAGE_UNDERSTANDING)
-                        }
-                        if (listOf("gpt", "gemini", "claude").any(lower::contains)) {
-                            add(ProviderCapability.STRUCTURED_OUTPUT)
-                        }
-                        add(ProviderCapability.STREAMING)
-                    }
-                    add(ModelDescriptor(id = id, displayName = id, capabilities = capabilities))
-                }
-            }.distinctBy { it.id }.sortedBy { it.id }
+            parseModelsResponse(body).also { models ->
+                if (models.isEmpty()) throw IOException("The endpoint returned no usable model identifiers.")
+            }
         }
     }
 
@@ -130,9 +163,7 @@ class OpenAIProviderAdapter(
             )
         }
 
-        val baseUrl = (config.customEndpoint?.takeIf { it.isNotBlank() } ?: descriptor.defaultEndpoint).let {
-            if (it.endsWith("/")) it else "$it/"
-        }
+        val baseUrl = normalizeBaseUrl(config.customEndpoint?.takeIf { it.isNotBlank() } ?: descriptor.defaultEndpoint)
         val targetUrl = "${baseUrl}chat/completions"
         val modelId = config.selectedModelId.ifBlank { descriptor.defaultModelId }
 
@@ -170,6 +201,11 @@ class OpenAIProviderAdapter(
             val httpRequest = Request.Builder()
                 .url(targetUrl)
                 .addHeader("Authorization", "Bearer $apiKey")
+                .apply {
+                    if (descriptor.type == ProviderType.OPENROUTER) {
+                        addHeader("X-OpenRouter-Title", "Jarvis Mobile")
+                    }
+                }
                 .post(body)
                 .build()
 
