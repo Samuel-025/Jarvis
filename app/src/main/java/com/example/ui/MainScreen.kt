@@ -578,7 +578,7 @@ fun PersonalOsTab(viewModel: MainViewModel) {
                         entryCount++
                         if (entryCount > 500) error("ZIP contains too many entries (limit 500)")
                         if (!entry.isDirectory) {
-                            val name = entry.name.replace('\\\\', '/')
+                            val name = entry.name.replace('\\', '/')
                             if (name.startsWith("/") || name.split('/').any { it == ".." } || name.length > 240) {
                                 error("ZIP contains an unsafe file path")
                             }
