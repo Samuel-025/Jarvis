@@ -80,6 +80,9 @@ fun AISettingsTab(viewModel: MainViewModel) {
     var customEndpoint by remember(selectedProviderType) {
         mutableStateOf(currentConfig?.customEndpoint ?: currentProvider?.descriptor?.defaultEndpoint ?: "")
     }
+    var manualModelId by remember(selectedProviderType, currentConfig?.selectedModelId) {
+        mutableStateOf(currentConfig?.selectedModelId ?: currentProvider?.descriptor?.defaultModelId.orEmpty())
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -255,6 +258,41 @@ fun AISettingsTab(viewModel: MainViewModel) {
                                     }
                                 }
                             }
+                        }
+
+                        // Manual model ID fallback for providers whose model-list endpoint is unavailable.
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("MODEL ID (MANUAL FALLBACK)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = JarvisTextSecondary)
+                        Text(
+                            "If Fetch models fails, enter a model ID from your provider's dashboard.",
+                            fontSize = 10.sp,
+                            color = JarvisTextSecondary
+                        )
+                        OutlinedTextField(
+                            value = manualModelId,
+                            onValueChange = { manualModelId = it },
+                            modifier = Modifier.fillMaxWidth().testTag("manual_model_id_field"),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            placeholder = { Text("e.g. provider/model-name", fontSize = 11.sp) }
+                        )
+                        Button(
+                            onClick = {
+                                val modelId = manualModelId.trim()
+                                if (modelId.isNotEmpty()) {
+                                    viewModel.updateProviderConfig(
+                                        (currentConfig ?: com.example.core.ai.provider.ProviderConfiguration(
+                                            provider.descriptor.type,
+                                            provider.descriptor.defaultModelId
+                                        )).copy(selectedModelId = modelId)
+                                    )
+                                }
+                            },
+                            enabled = manualModelId.trim().isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth().testTag("apply_manual_model_id_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)
+                        ) {
+                            Text("Use this model ID", color = JarvisNavyDark, fontWeight = FontWeight.Bold)
                         }
 
                         // Custom Endpoint (if allowed)
