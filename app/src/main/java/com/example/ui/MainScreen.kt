@@ -269,11 +269,11 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
             IconButton(onClick = { if (uiState.isEmergencyStopped) viewModel.resetEmergencyStop() else viewModel.triggerEmergencyStop() }, modifier = Modifier.size(48.dp).clip(CircleShape).background(JarvisSurfaceDark).testTag("emergency_stop_button")) { Icon(if (uiState.isEmergencyStopped) Icons.Default.Refresh else Icons.Default.Stop, contentDescription = "Emergency stop", tint = if (uiState.isEmergencyStopped) JarvisGreenOk else JarvisRedAlert) }
         }
         Spacer(Modifier.height(12.dp))
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(0.72f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Box(Modifier.size(244.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(132.dp), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxSize().border(2.dp, JarvisCyan.copy(alpha = .20f), CircleShape).padding(18.dp).border(3.dp, JarvisCyan.copy(alpha = .35f), CircleShape).padding(20.dp).border(4.dp, stateColor, CircleShape), contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(if (listening) 104.dp else 82.dp).clip(CircleShape).background(stateColor.copy(alpha = .18f)), contentAlignment = Alignment.Center) { Box(Modifier.size(26.dp).clip(CircleShape).background(stateColor)) }
+                        Box(Modifier.size(if (listening) 62.dp else 50.dp).clip(CircleShape).background(stateColor.copy(alpha = .18f)), contentAlignment = Alignment.Center) { Box(Modifier.size(20.dp).clip(CircleShape).background(stateColor)) }
                     }
                 }
                 Text(uiState.voiceState.name, color = stateColor, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -287,23 +287,62 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
                 uiState.voiceErrorMessage?.let { Text(it, color = JarvisRedAlert, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
             }
         }
-        if (conversationHistory.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth().height(104.dp),
-                colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Column(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Text("PERSISTENT CHAT MEMORY · ${conversationHistory.size} recent messages", color = JarvisCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                        items(conversationHistory.take(4).reversed(), key = { it.id }) { message ->
-                            Text(
-                                text = "${if (message.role == "USER") "You" else "Jarvis"}: ${message.content}",
-                                color = if (message.role == "USER") JarvisTextSecondary else JarvisTextPrimary,
-                                fontSize = 10.sp,
-                                maxLines = 2,
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
+        Card(
+            modifier = Modifier.fillMaxWidth().weight(1.12f),
+            colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("CHAT", color = JarvisCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("${conversationHistory.size} saved messages", color = JarvisTextSecondary, fontSize = 10.sp)
+                }
+                Spacer(Modifier.height(6.dp))
+                if (conversationHistory.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Hi, I'm Jarvis.", color = JarvisTextPrimary, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Ask a question, use your voice, or try a phone command.", color = JarvisTextSecondary, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        items(conversationHistory.take(80).reversed(), key = { it.id }) { message ->
+                            val isUser = message.role.equals("USER", ignoreCase = true)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+                            ) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(0.88f),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isUser) JarvisCardDark else JarvisNavyDark
+                                    ),
+                                    shape = RoundedCornerShape(
+                                        topStart = 14.dp, topEnd = 14.dp,
+                                        bottomEnd = if (isUser) 4.dp else 14.dp,
+                                        bottomStart = if (isUser) 14.dp else 4.dp
+                                    )
+                                ) {
+                                    Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                        Text(
+                                            if (isUser) "You" else "Jarvis",
+                                            color = if (isUser) JarvisCyanLight else JarvisGold,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.height(3.dp))
+                                        Text(message.content, color = JarvisTextPrimary, fontSize = 12.sp)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
