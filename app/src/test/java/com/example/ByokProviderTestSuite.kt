@@ -137,6 +137,32 @@ class ByokProviderTestSuite {
     }
 
     @Test
+    fun testEndpointNormalizationRejectsMissingOrUnsafeScheme() {
+        listOf("", "api.example.com/v1", "file:///tmp/api", "javascript:alert(1)").forEach { endpoint ->
+            var rejected = false
+            try { OpenAIProviderAdapter.normalizeBaseUrl(endpoint) } catch (_: IllegalArgumentException) { rejected = true }
+            assertTrue("Expected endpoint to be rejected: $endpoint", rejected)
+        }
+    }
+
+    @Test
+    fun testModelDiscoveryRejectsMalformedOrUnknownSchemas() {
+        listOf("not-json", "null", """{"results":[{"id":"ignored"}]}""", """{"data":"not-a-list"}""").forEach { body ->
+            var rejected = false
+            try { OpenAIProviderAdapter.parseModelsResponse(body) } catch (_: Exception) { rejected = true }
+            assertTrue("Expected malformed model response to be rejected: $body", rejected)
+        }
+    }
+
+    @Test
+    fun testModelDiscoveryDeduplicatesIdsAndSkipsMalformedEntries() {
+        val models = OpenAIProviderAdapter.parseModelsResponse(
+            """{"data":[{"id":"model-z"},{"id":"model-z","name":"duplicate"},{"name":"named-model"},{"id":4},null]}"""
+        )
+        assertEquals(listOf("model-z", "named-model"), models.map { it.id })
+    }
+
+    @Test
     fun testProviderSpecificFallbackModels() {
         assertEquals("deepseek-chat", OpenAIProviderAdapter.defaultModelFor(ProviderType.DEEPSEEK))
         assertEquals("mistral-small-latest", OpenAIProviderAdapter.defaultModelFor(ProviderType.MISTRAL))
