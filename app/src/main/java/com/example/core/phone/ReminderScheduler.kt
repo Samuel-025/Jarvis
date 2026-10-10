@@ -1,7 +1,7 @@
 package com.example.core.phone
 
 import android.app.AlarmManager
-import android.app.BroadcastReceiver
+import android.content.BroadcastReceiver
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
