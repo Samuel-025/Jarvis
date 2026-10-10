@@ -11,6 +11,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MemoryRagOkfTest {
+    @Test fun strictPrivacyAllowsOnlyLocalRetrievalAndNeverCloudImageTransmission() {
+        assertTrue(PrivacyRoutingPolicy.mayIncludeRetrievedMemory(PrivacyMode.STRICT, false))
+        assertFalse(PrivacyRoutingPolicy.mayTransmitImage(PrivacyMode.STRICT))
+    }
+
+    @Test fun balancedPrivacyExcludesRetrievedMemoryUntilExplicitOptIn() {
+        assertFalse(PrivacyRoutingPolicy.mayIncludeRetrievedMemory(PrivacyMode.BALANCED, false))
+        assertTrue(PrivacyRoutingPolicy.mayIncludeRetrievedMemory(PrivacyMode.BALANCED, true))
+        assertFalse(PrivacyRoutingPolicy.mayTransmitImage(PrivacyMode.BALANCED))
+    }
+
+    @Test fun cloudPrivacyAllowsMemoryAndImageOnlyInExplicitCloudMode() {
+        assertTrue(PrivacyRoutingPolicy.mayIncludeRetrievedMemory(PrivacyMode.CLOUD, false))
+        assertTrue(PrivacyRoutingPolicy.mayTransmitImage(PrivacyMode.CLOUD))
+    }
+
     @Test fun ragRanksRelevantSavedFactsAndIgnoresUnrelatedFacts() {
         val snippets = listOf(
             RagContextBuilder.Snippet("Preferred laptop", "The laptop budget is 45000 rupees", "memory", 2),

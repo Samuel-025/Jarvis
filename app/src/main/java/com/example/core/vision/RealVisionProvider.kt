@@ -5,6 +5,7 @@ import android.util.Base64
 import com.example.core.ai.AIBrain
 import com.example.core.ai.AIResponse
 import com.example.core.model.PrivacyMode
+import com.example.core.model.PrivacyRoutingPolicy
 import com.example.core.memory.LocalOcrProcessor
 import java.io.ByteArrayOutputStream
 
@@ -20,7 +21,7 @@ class RealVisionProvider(
         prompt: String,
         privacyMode: PrivacyMode
     ): VisionResult {
-        if (privacyMode != PrivacyMode.CLOUD) {
+        if (!PrivacyRoutingPolicy.mayTransmitImage(privacyMode)) {
             val reason = if (privacyMode == PrivacyMode.STRICT) {
                 "Strict privacy mode blocks image transmission. Switch to Cloud mode to analyze a photo."
             } else {

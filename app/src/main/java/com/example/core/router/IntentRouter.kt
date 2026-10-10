@@ -10,6 +10,7 @@ import com.example.core.model.CommandResult
 import com.example.core.model.ErrorType
 import com.example.core.model.JarvisIntent
 import com.example.core.model.PrivacyMode
+import com.example.core.model.PrivacyRoutingPolicy
 import com.example.core.model.RiskLevel
 import com.example.core.phone.PhoneAutomationRegistry
 import com.example.core.safety.ConfirmationManager
@@ -152,8 +153,9 @@ class IntentRouter(
                     // not instructions. Privacy routing remains enforced by AIProviderManager.
                     // Strict mode is local-only. Cloud mode is explicit. In Balanced mode,
                     // keep personal memory out of cloud requests unless the user opted in.
-                    val mayUseRetrievedContext = privacyMode == PrivacyMode.STRICT ||
-                        privacyMode == PrivacyMode.CLOUD || includeMemoryInCloud
+                    val mayUseRetrievedContext = PrivacyRoutingPolicy.mayIncludeRetrievedMemory(
+                        privacyMode, includeMemoryInCloud
+                    )
                     val retrievedContext = if (mayUseRetrievedContext) {
                         personalOsRepository.buildRagContext(intent.query)
                     } else ""
