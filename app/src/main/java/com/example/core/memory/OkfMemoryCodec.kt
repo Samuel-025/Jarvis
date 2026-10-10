@@ -8,11 +8,7 @@ object OkfMemoryCodec {
         enum class Kind { MEMORY, NOTE }
     }
 
-    data class ImportReport(
-        val items: List<ImportItem>,
-        val errors: List<String>,
-        val skippedFiles: Int
-    )
+    data class ImportReport(val items: List<ImportItem>, val errors: List<String>, val skippedFiles: Int)
 
     fun exportBundle(memories: List<MemoryEntity>, notes: List<NoteEntity>, messages: List<ConversationMessageEntity>): Map<String, String> {
         val bundle = linkedMapOf<String, String>()
@@ -43,18 +39,13 @@ This bundle contains exported memories, notes, and conversation messages. Keep t
         return bundle
     }
 
-    /**
-     * Validates a decoded OKF bundle and imports only memory/note concepts.
-     * Callers must decode the ZIP and pass relative paths; no paths are written to disk here.
-     * Conversation files are intentionally not imported as trusted memory.
-     */
+    /** Validate a decoded OKF bundle. Only memory/note concepts are importable; chat logs are not trusted memory. */
     fun parseImportBundle(files: Map<String, String>): ImportReport {
         val index = files["index.md"]
-        if (index == null) return ImportReport(emptyList(), listOf("Missing index.md"), files.size)
-        if (!Regex("(?m)^okf_version:\s*[\"']?0\\.2[\"']?\\s*$").containsMatchIn(index)) {
-            return ImportReport(emptyList(), listOf("Unsupported or missing OKF version; expected 0.2"), files.size - 1)
+            ?: return ImportReport(emptyList(), listOf("Missing index.md"), files.size)
+        if (!Regex("(?m)^okf_version:\\s*[\"']?0\\.2[\"']?\\s*$").containsMatchIn(index)) {
+            return ImportReport(emptyList(), listOf("Unsupported or missing OKF version; expected 0.2"), (files.size - 1).coerceAtLeast(0))
         }
-
         val items = mutableListOf<ImportItem>()
         val errors = mutableListOf<String>()
         var skipped = 0
@@ -74,18 +65,18 @@ This bundle contains exported memories, notes, and conversation messages. Keep t
                 errors += "$path: invalid Markdown frontmatter"
                 return@forEach
             }
-            val expectedType = if (kind == ImportItem.Kind.MEMORY) "memory" else "note"
-            if (!parsed.first.equals(expectedType, ignoreCase = true)) {
+            val expectedType = if (kind == ImportItem.Kind.MEMORY) "Memory" else "Note"
+            if (!parsed.type.equals(expectedType, ignoreCase = true)) {
                 errors += "$path: concept type does not match its folder"
                 return@forEach
             }
-            val title = parsed.second.trim().take(200)
-            val body = parsed.third.trim().take(12000)
+            val title = parsed.title.trim().take(200)
+            val body = parsed.body.trim().take(12000)
             if (title.isBlank() || body.isBlank()) {
                 errors += "$path: title and body must be non-empty"
                 return@forEach
             }
-            val category = if (kind == ImportItem.Kind.MEMORY) parsed.fourth.ifBlank { "imported" }.take(80) else "imported"
+            val category = if (kind == ImportItem.Kind.MEMORY) parsed.category.ifBlank { "imported" }.take(80) else "imported"
             items += ImportItem(kind, title, body, category)
         }
         return ImportReport(items, errors, skipped)
@@ -109,12 +100,8 @@ This bundle contains exported memories, notes, and conversation messages. Keep t
     }
 
     private fun unquote(value: String): String {
-        if (value.length >= 2 && value.first() == '\'' && value.last() == '\'') {
-            return value.substring(1, value.length - 1).replace("''", "'")
-        }
-        if (value.length >= 2 && value.first() == '"' && value.last() == '"') {
-            return value.substring(1, value.length - 1).replace("\\\"", "\"")
-        }
+        if (value.length >= 2 && value.first() == '\'' && value.last() == '\'') return value.substring(1, value.length - 1).replace("''", "'")
+        if (value.length >= 2 && value.first() == '"' && value.last() == '"') return value.substring(1, value.length - 1).replace("\\\"", "\"")
         return value
     }
 
