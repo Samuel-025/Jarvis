@@ -34,8 +34,16 @@ jobs:
       - name: Make Gradle Wrapper Executable
         run: chmod +x ./gradlew
 
-      # The app's debugConfig points to ${rootDir}/debug.keystore.
-      # GitHub-hosted runners are clean, so generate a debug-only key if absent.
+      # Persist the debug signing key between CI runs. Without this cache, each clean
+      # GitHub runner creates a different key and Android refuses in-place APK updates.
+      - name: Restore Persistent Debug Keystore
+        uses: actions/cache@v4
+        with:
+          path: debug.keystore
+          key: jarvis-debug-signing-key-v1
+
+      # This only runs on the first cache miss. Once cached, every future build signs with
+      # the same key. Keep the cache key stable unless intentionally rotating the signing key.
       - name: Ensure Debug Keystore Exists
         shell: bash
         run: |
