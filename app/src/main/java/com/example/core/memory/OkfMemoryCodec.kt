@@ -43,7 +43,7 @@ This bundle contains exported memories, notes, and conversation messages. Keep t
     fun parseImportBundle(files: Map<String, String>): ImportReport {
         val index = files["index.md"]
             ?: return ImportReport(emptyList(), listOf("Missing index.md"), files.size)
-        if (!Regex("(?m)^okf_version:\\s*[\"']?0\\.2[\"']?\\s*$").containsMatchIn(index)) {
+        if (!Regex("""(?m)^okf_version:\s*["']?0\.2["']?\s*$""").containsMatchIn(index)) {
             return ImportReport(emptyList(), listOf("Unsupported or missing OKF version; expected 0.2"), (files.size - 1).coerceAtLeast(0))
         }
         val items = mutableListOf<ImportItem>()
@@ -52,8 +52,8 @@ This bundle contains exported memories, notes, and conversation messages. Keep t
         files.forEach { (path, text) ->
             if (path == "index.md") return@forEach
             val kind = when {
-                Regex("^memories/memory-[A-Za-z0-9_-]+\\.md$").matches(path) -> ImportItem.Kind.MEMORY
-                Regex("^notes/note-[A-Za-z0-9_-]+\\.md$").matches(path) -> ImportItem.Kind.NOTE
+                Regex("""^memories/memory-[A-Za-z0-9_-]+\.md$""").matches(path) -> ImportItem.Kind.MEMORY
+                Regex("""^notes/note-[A-Za-z0-9_-]+\.md$""").matches(path) -> ImportItem.Kind.NOTE
                 else -> { skipped++; return@forEach }
             }
             if (text.length > 100_000) {
