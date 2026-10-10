@@ -40,6 +40,12 @@ class AIProviderManager(
         // Register default providers
         val gemini = GeminiProviderAdapter()
         val openAI = OpenAIProviderAdapter(OpenAIProviderAdapter.defaultDescriptor(ProviderType.OPENAI))
+        val openRouter = OpenAIProviderAdapter(
+            OpenAIProviderAdapter.defaultDescriptor(
+                ProviderType.OPENROUTER,
+                "https://openrouter.ai/api/v1/"
+            )
+        )
         val customOpenAI = OpenAIProviderAdapter(
             OpenAIProviderAdapter.defaultDescriptor(
                 ProviderType.OPENAI_COMPATIBLE,
@@ -50,6 +56,7 @@ class AIProviderManager(
 
         registerProvider(gemini)
         registerProvider(openAI)
+        registerProvider(openRouter)
         registerProvider(customOpenAI)
         registerProvider(local)
 
@@ -62,6 +69,11 @@ class AIProviderManager(
         initConfigs[ProviderType.OPENAI] = ProviderConfiguration(
             type = ProviderType.OPENAI,
             selectedModelId = openAI.descriptor.defaultModelId
+        )
+        initConfigs[ProviderType.OPENROUTER] = ProviderConfiguration(
+            type = ProviderType.OPENROUTER,
+            selectedModelId = openRouter.descriptor.defaultModelId,
+            customEndpoint = null
         )
         initConfigs[ProviderType.OPENAI_COMPATIBLE] = ProviderConfiguration(
             type = ProviderType.OPENAI_COMPATIBLE,
@@ -227,7 +239,11 @@ class AIProviderManager(
 
     suspend fun autoDetectProvider(rawApiKey: String, customEndpoint: String? = null): ProviderType? {
         if (rawApiKey.isBlank()) return null
-        val candidates = listOf(ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENAI_COMPATIBLE)
+        val candidates = if (rawApiKey.trim().startsWith("sk-or-", ignoreCase = true)) {
+            listOf(ProviderType.OPENROUTER, ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENAI_COMPATIBLE)
+        } else {
+            listOf(ProviderType.GEMINI, ProviderType.OPENAI, ProviderType.OPENROUTER, ProviderType.OPENAI_COMPATIBLE)
+        }
         for (type in candidates) {
             val provider = getProvider(type) ?: continue
             val current = _configurations.value[type]

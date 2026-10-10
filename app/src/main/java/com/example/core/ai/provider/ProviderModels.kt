@@ -10,6 +10,7 @@ enum class ProviderCapability {
 enum class ProviderType(val displayName: String) {
     GEMINI("Google Gemini"),
     OPENAI("OpenAI"),
+    OPENROUTER("OpenRouter"),
     OPENAI_COMPATIBLE("Custom OpenAI-Compatible"),
     LOCAL_OFFLINE("Local Heuristics (Offline)")
 }
