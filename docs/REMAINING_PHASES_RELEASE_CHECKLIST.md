@@ -1,8 +1,16 @@
 # Jarvis Mobile — remaining-phase implementation and release checklist
 
-Updated: 2026-10-10
+Updated: 2026-10-11
 
 This is the consolidated execution checklist for the remaining work. It distinguishes code/CI evidence from physical-device acceptance. It does not claim that unsupported local-model runtimes, Android preview APIs, or live provider credentials have been verified.
+
+## Latest user acceptance results (2026-10-11)
+- [ ] Assistant orb layout on short screens — not tested on device.
+- [ ] Local reminder notifications — not tested on device.
+- [x] OKF export/import — user-reported pass.
+- [x] Privacy modes — user-reported pass.
+
+The OKF and privacy results are user-reported device acceptance, not a substitute for automated tests. Orb and reminder checks remain open until explicitly tested on the target phone. A passing CI build cannot establish physical-device behavior.
 
 ## Phase A — Durable memory and OKF
 - [x] Room-backed conversation history and migration.
@@ -11,7 +19,8 @@ This is the consolidated execution checklist for the remaining work. It distingu
 - [x] OKF v0.2 ZIP export and validated import with size/path limits.
 - [x] Duplicate-aware imports; imported conversation and unknown files are not promoted to trusted memories.
 - [x] Round-trip and import-validation unit tests.
-- [ ] Device acceptance: export, clear only if desired, import, compare content, and verify settings/keys remain configured.
+- [x] Device acceptance: user reports OKF export/import passed; settings/key persistence was not separately specified.
+- [ ] Optional follow-up: verify provider settings/API keys remain configured after a round trip.
 
 ## Phase B — Privacy boundaries
 - [x] Centralized pure privacy policy for retrieved context and image transmission.
@@ -19,6 +28,7 @@ This is the consolidated execution checklist for the remaining work. It distingu
 - [x] Balanced: saved memory excluded by default; image transmission denied.
 - [x] Cloud: image transmission allowed only when explicitly selected.
 - [x] Unit coverage for the policy matrix.
+- [x] Device acceptance: user reports privacy modes passed.
 - [ ] Integration/device acceptance: observe actual provider/network behavior for each mode; a policy unit test is not packet-level proof.
 
 ## Phase C — BYOK provider reliability
