@@ -25,10 +25,13 @@ import com.example.core.model.JarvisIntent
 import com.example.core.model.PrivacyMode
 import com.example.core.model.RiskLevel
 import com.example.core.permissions.PermissionController
+import com.example.core.permissions.CapabilityPermissionBroker
+import com.example.core.permissions.PermissionGrantChecker
 import com.example.core.phone.PhoneAutomationRegistry
 import com.example.core.router.IntentRouter
 import com.example.core.safety.EmergencyStop
 import com.example.core.safety.RiskEngine
+import com.example.core.tools.Tool
 import com.example.core.tools.ToolRegistry
 import com.example.core.voice.SpeechRecognizerAdapter
 import com.example.core.voice.TextToSpeechAdapter
@@ -399,4 +402,41 @@ class AcceptanceAuditComprehensiveTest {
         val memories = personalOsRepository.searchMemories("prefer tea")
         assertTrue(memories.any { it.value == "I prefer tea in the morning" })
     }
+    @Test
+    fun testRegisteredToolDispatchChecksPermissionBeforeExecution() = runBlocking {
+        val registry = ToolRegistry()
+        var executions = 0
+        val permission = "android.permission.CAMERA"
+        assertTrue(registry.register(object : Tool {
+            override val name = "camera-test"
+            override val description = "Test tool permission gate"
+            override val requiredPermissions = setOf(permission)
+            override fun canHandle(intent: JarvisIntent): Boolean =
+                intent is JarvisIntent.Unknown && intent.rawInput == "run camera test"
+            override suspend fun execute(intent: JarvisIntent): CommandResult {
+                executions++
+                return CommandResult.Success("tool executed")
+            }
+        }))
+
+        val deniedRouter = IntentRouter(
+            localCommandEngine, phoneRegistry, personalOsRepository, fakeAiBrain,
+            registry, auditEventRepository,
+            CapabilityPermissionBroker(PermissionGrantChecker { false })
+        )
+        val denied = deniedRouter.route(JarvisIntent.Unknown("run camera test"))
+        assertTrue(denied is CommandResult.Error)
+        assertEquals(ErrorType.PERMISSION_DENIED, (denied as CommandResult.Error).errorType)
+        assertEquals(0, executions)
+
+        val grantedRouter = IntentRouter(
+            localCommandEngine, phoneRegistry, personalOsRepository, fakeAiBrain,
+            registry, auditEventRepository,
+            CapabilityPermissionBroker(PermissionGrantChecker { it == permission })
+        )
+        val allowed = grantedRouter.route(JarvisIntent.Unknown("run camera test"))
+        assertTrue(allowed is CommandResult.Success)
+        assertEquals(1, executions)
+    }
+
 }
