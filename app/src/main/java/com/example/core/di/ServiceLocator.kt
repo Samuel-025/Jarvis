@@ -15,6 +15,9 @@ import com.example.core.integrations.IntegrationAdapter
 import com.example.core.memory.JarvisDatabase
 import com.example.core.memory.PersonalOsRepository
 import com.example.core.phone.PhoneAutomationRegistry
+import com.example.core.permissions.CapabilityPermissionBroker
+import com.example.core.permissions.PermissionController
+import com.example.core.permissions.PermissionGrantChecker
 import com.example.core.router.IntentRouter
 import com.example.core.skills.SkillRegistry
 import com.example.core.tools.ToolRegistry
@@ -81,6 +84,12 @@ class ServiceLocator(val appContext: Context) {
         ToolRegistry()
     }
 
+    val capabilityPermissionBroker: CapabilityPermissionBroker by lazy {
+        CapabilityPermissionBroker(PermissionGrantChecker { permission ->
+            PermissionController.isPermissionGranted(appContext, permission)
+        })
+    }
+
     val skillRegistry: SkillRegistry by lazy {
         SkillRegistry()
     }
@@ -104,7 +113,8 @@ class ServiceLocator(val appContext: Context) {
             personalOsRepository = personalOsRepository,
             aiBrain = aiBrain,
             toolRegistry = toolRegistry,
-            auditEventRepository = auditEventRepository
+            auditEventRepository = auditEventRepository,
+            permissionBroker = capabilityPermissionBroker
         )
     }
 
