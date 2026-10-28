@@ -3,10 +3,7 @@ package com.example.core.tools
 import com.example.core.model.CommandResult
 import com.example.core.model.JarvisIntent
 
-/**
- * A capability that can execute one or more Jarvis intents.
- * requiredPermission remains for source compatibility; new tools may override requiredPermissions.
- */
+/** A capability that can execute one or more Jarvis intents. */
 interface Tool {
     val name: String
     val description: String
@@ -14,6 +11,8 @@ interface Tool {
     val requiredPermissions: Set<String>
         get() = requiredPermission?.let(::setOf) ?: emptySet()
     val id: String get() = name.trim().lowercase()
+    val requiresConfirmation: Boolean get() = false
+    val confirmationPrompt: String get() = "Allow $name to perform this action?"
 
     fun canHandle(intent: JarvisIntent): Boolean
     suspend fun execute(intent: JarvisIntent): CommandResult
@@ -24,7 +23,6 @@ class ToolRegistry {
     private val lock = Any()
     private val toolsById = linkedMapOf<String, Tool>()
 
-    /** Returns true when registered; false for a blank or duplicate ID. */
     fun register(tool: Tool): Boolean = synchronized(lock) {
         val key = tool.id.trim().lowercase()
         if (key.isBlank() || toolsById.containsKey(key)) false
@@ -35,22 +33,15 @@ class ToolRegistry {
     }
 
     fun getAll(): List<Tool> = synchronized(lock) { toolsById.values.toList() }
-
-    fun getById(id: String): Tool? = synchronized(lock) {
-        toolsById[id.trim().lowercase()]
-    }
-
+    fun getById(id: String): Tool? = synchronized(lock) { toolsById[id.trim().lowercase()] }
     fun findHandler(intent: JarvisIntent): Tool? = synchronized(lock) {
         toolsById.values.firstOrNull { it.canHandle(intent) }
     }
-
     fun findHandlers(intent: JarvisIntent): List<Tool> = synchronized(lock) {
         toolsById.values.filter { it.canHandle(intent) }
     }
-
     fun unregister(id: String): Boolean = synchronized(lock) {
         toolsById.remove(id.trim().lowercase()) != null
     }
-
     fun clear() = synchronized(lock) { toolsById.clear() }
 }
