@@ -164,7 +164,7 @@ class IntentRouter(
     private suspend fun executeRegisteredTool(tool: Tool?, intent: JarvisIntent): CommandResult {
         if (tool == null) {
             return CommandResult.Error(
-                message = "I didn't understand '${intent.rawInput}'. Try a built-in command or configure a matching tool.",
+                message = "I didn't understand '${(intent as? JarvisIntent.Unknown)?.rawInput ?: "this command"}'. Try a built-in command or configure a matching tool.",
                 errorType = ErrorType.INVALID_INPUT
             )
         }
