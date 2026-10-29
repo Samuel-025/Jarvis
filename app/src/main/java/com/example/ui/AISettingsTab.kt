@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -110,10 +112,23 @@ fun AISettingsTab(viewModel: MainViewModel) {
             Text("SELECT AI PROVIDER:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = JarvisGold)
             Spacer(modifier = Modifier.height(4.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ProviderType.values().forEach { type ->
+                // Put the generic BYOK route first so it is immediately discoverable on phones.
+                val providerChoices = listOf(
+                    ProviderType.OPENAI_COMPATIBLE,
+                    ProviderType.GEMINI,
+                    ProviderType.OPENAI,
+                    ProviderType.OPENROUTER,
+                    ProviderType.DEEPSEEK,
+                    ProviderType.TOGETHER_AI,
+                    ProviderType.MISTRAL,
+                    ProviderType.LOCAL_OFFLINE
+                )
+                providerChoices.forEach { type ->
                     FilterChip(
                         selected = selectedProviderType == type,
                         onClick = { viewModel.setSelectedProvider(type) },

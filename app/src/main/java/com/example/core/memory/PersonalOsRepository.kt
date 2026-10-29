@@ -95,10 +95,7 @@ class PersonalOsRepository(
         return OkfImportSummary(importedMemories, importedNotes, report.skippedFiles, report.errors)
     }
 
-    private fun redactSecrets(text: String): String = text
-        .replace(Regex("(?i)\\bsk-(?:or-v1-)?[A-Za-z0-9_-]{16,}\\b"), "[REDACTED_SECRET]")
-        .replace(Regex("\\bAIza[0-9A-Za-z_-]{20,}\\b"), "[REDACTED_SECRET]")
-        .replace(Regex("\\bgsk_[A-Za-z0-9_-]{16,}\\b"), "[REDACTED_SECRET]")
+    private fun redactSecrets(text: String): String = SecretRedactor.redact(text)
 
     suspend fun exportOkfBundle(): Map<String, String> = OkfMemoryCodec.exportBundle(
         memories = memoryDao.getAllMemoriesOnce(),

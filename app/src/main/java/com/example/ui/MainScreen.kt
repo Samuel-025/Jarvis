@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.filled.Settings
@@ -232,6 +234,7 @@ fun TopSafetyHeader(
 @Composable
 fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val conversationHistory by viewModel.conversationHistory.collectAsStateWithLifecycle()
     var textInput by remember { mutableStateOf("") }
     // Debounce rapid taps while Android starts/stops SpeechRecognizer.
@@ -252,6 +255,26 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> viewModel.onRuntimePermissionResult(granted) }
     val listening = uiState.voiceState == VoiceState.LISTENING
+    // Voice input is foreground-only. Stop the recognizer when the app leaves the foreground.
+    DisposableEffect(lifecycleOwner, listening) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && listening) {
+                viewModel.stopVoiceListening()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val orbSize by animateDpAsState(
+        targetValue = when (uiState.voiceState) {
+            VoiceState.LISTENING -> 108.dp
+            VoiceState.PROCESSING, VoiceState.SPEAKING -> 98.dp
+            VoiceState.ERROR -> 88.dp
+            VoiceState.IDLE -> 88.dp
+        },
+        animationSpec = tween(durationMillis = 220),
+        label = "jarvis_voice_orb_size"
+    )
     val stateColor = when {
         uiState.voiceState == VoiceState.LISTENING -> JarvisCyan
         uiState.voiceState == VoiceState.SPEAKING -> JarvisGold
@@ -277,7 +300,7 @@ fun ConsoleTab(viewModel: MainViewModel, uiState: MainUiState) {
         Box(Modifier.weight(0.68f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Keep the voice orb compact so it cannot collide with the chat card on short screens.
-                Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(orbSize).testTag("jarvis_voice_orb"), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxSize().border(1.5.dp, JarvisCyan.copy(alpha = .20f), CircleShape).padding(10.dp).border(2.dp, JarvisCyan.copy(alpha = .35f), CircleShape).padding(10.dp).border(2.5.dp, stateColor, CircleShape), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(if (listening) 42.dp else 34.dp).clip(CircleShape).background(stateColor.copy(alpha = .18f)), contentAlignment = Alignment.Center) { Box(Modifier.size(14.dp).clip(CircleShape).background(stateColor)) }
                     }
